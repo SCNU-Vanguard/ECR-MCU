@@ -1,0 +1,2 @@
+EasyLogger: https://github.com/armink/EasyLogger @ 806328e131836662fa83dd43364a53f699fd76ac
+Only inc/elog.h, src/elog.c, src/elog_utils.c are used (port/ and plugins/ are replaced by ../elog_port).

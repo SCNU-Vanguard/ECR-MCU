@@ -1,0 +1,1 @@
+letter-shell: https://github.com/NevermindZZT/letter-shell @ 03432e824ca889d961743b437bce3f837c47bb86 (src/ only; shell_cfg.h edited for this project)

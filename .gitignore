@@ -1,6 +1,6 @@
 # GCC / arm-none-eabi（Makefile 的 BUILD_DIR = build）
-build/
-output/
+platform/*/build/
+/output/
 Debug/
 Release/
 *.o

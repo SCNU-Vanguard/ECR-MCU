@@ -1,0 +1,9 @@
+d := $(dir $(lastword $(MAKEFILE_LIST)))
+obj-$(CONFIG_ST_LED)    += $(d)st_led.o
+obj-$(CONFIG_ST_BUZZER) += $(d)st_buzzer.o
+obj-$(CONFIG_ST_IMU)    += $(d)st_imu.o
+obj-$(CONFIG_ST_UART)   += $(d)st_uart.o
+obj-$(CONFIG_ST_USB)    += $(d)st_usb.o
+obj-$(CONFIG_ST_CAN)    += $(d)st_can.o
+obj-$(CONFIG_ST_DBUS)   += $(d)st_dbus.o
+obj-$(CONFIG_ST_STATS)  += $(d)st_stats.o

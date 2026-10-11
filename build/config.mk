@@ -1,0 +1,70 @@
+# 处理 CONFIG_XXX：规范化取值、检查依赖、生成 -DCONFIG_XXX 编译宏
+
+# 1. 取值规范化：去掉首尾空白；除 y 以外一律当作 n
+$(foreach v,$(filter CONFIG_%,$(.VARIABLES)),$(eval $(v) := $(if $(filter y,$($(v))),y,n)))
+
+# 2. 依赖检查：$(call require,A,B) = A 为 y 时 B 必须也是 y，否则报错
+define require
+$(if $(filter y,$($(1))),$(if $(filter y,$($(2))),,$(error $(1)=y requires $(2)=y (see $(CFGFILE)))))
+endef
+
+# 冲突：A 和 B 不能同时为 y
+define conflict
+$(if $(filter y,$($(1))),$(if $(filter y,$($(2))),$(error $(1)=y conflicts with $(2)=y (see $(CFGFILE)))))
+endef
+
+# 子项 -> 父项
+$(call require,CONFIG_BSP_GPIO,CONFIG_BSP)
+$(call require,CONFIG_BSP_UART,CONFIG_BSP)
+$(call require,CONFIG_BSP_CAN,CONFIG_BSP)
+$(call require,CONFIG_BSP_SPI,CONFIG_BSP)
+$(call require,CONFIG_BSP_PWM,CONFIG_BSP)
+$(call require,CONFIG_BSP_USB,CONFIG_BSP)
+$(call require,CONFIG_CDD_REMOTE_DT7,CONFIG_CDD)
+$(call require,CONFIG_CDD_MOTOR_DJI,CONFIG_CDD)
+$(call require,CONFIG_CDD_IMU_BMI088,CONFIG_CDD)
+$(call require,CONFIG_CDD_LED_WS2812,CONFIG_CDD)
+$(call require,CONFIG_CDD_BUZZER,CONFIG_CDD)
+$(call require,CONFIG_APPL_DEMO,CONFIG_APPL)
+$(call require,CONFIG_APPL_DEMO,CONFIG_ROBOT_DEMO)
+$(call require,CONFIG_ST_LED,CONFIG_SELFTEST)
+$(call require,CONFIG_ST_BUZZER,CONFIG_SELFTEST)
+$(call require,CONFIG_ST_IMU,CONFIG_SELFTEST)
+$(call require,CONFIG_ST_UART,CONFIG_SELFTEST)
+$(call require,CONFIG_ST_USB,CONFIG_SELFTEST)
+$(call require,CONFIG_ST_CAN,CONFIG_SELFTEST)
+$(call require,CONFIG_ST_CAN_WIRED,CONFIG_ST_CAN)
+$(call require,CONFIG_ST_DBUS,CONFIG_SELFTEST)
+$(call require,CONFIG_ST_STATS,CONFIG_SELFTEST)
+$(call require,CONFIG_ST_STATS,CONFIG_TASK_STATS)
+$(call require,CONFIG_ST_STATS,CONFIG_BSP_UART)
+$(call require,CONFIG_SHELL,CONFIG_BSP_UART)
+$(call require,CONFIG_LOG,CONFIG_BSP_UART)
+# 自测的 s 触发统计和 shell 都占用日志串口的接收，只能开一个
+$(call conflict,CONFIG_ST_STATS,CONFIG_SHELL)
+
+# 模块 -> 它依赖的外设抽象 / 设备驱动
+$(call require,CONFIG_BSP_SPI,CONFIG_BSP_GPIO)
+$(call require,CONFIG_CDD_REMOTE_DT7,CONFIG_BSP_UART)
+$(call require,CONFIG_CDD_MOTOR_DJI,CONFIG_BSP_CAN)
+$(call require,CONFIG_CDD_IMU_BMI088,CONFIG_BSP_SPI)
+$(call require,CONFIG_CDD_IMU_BMI088,CONFIG_BSP_GPIO)
+$(call require,CONFIG_CDD_LED_WS2812,CONFIG_BSP_SPI)
+$(call require,CONFIG_CDD_BUZZER,CONFIG_BSP_PWM)
+$(call require,CONFIG_ST_LED,CONFIG_CDD_LED_WS2812)
+$(call require,CONFIG_ST_BUZZER,CONFIG_CDD_BUZZER)
+$(call require,CONFIG_ST_IMU,CONFIG_CDD_IMU_BMI088)
+$(call require,CONFIG_ST_UART,CONFIG_BSP_UART)
+$(call require,CONFIG_ST_USB,CONFIG_BSP_USB)
+$(call require,CONFIG_ST_CAN,CONFIG_CDD_MOTOR_DJI)
+$(call require,CONFIG_ST_DBUS,CONFIG_CDD_REMOTE_DT7)
+$(call require,CONFIG_ROBOT_BIND_CHASSIS,CONFIG_CDD_MOTOR_DJI)
+
+# 日志是核心框架，统一从 USART10 输出，必须打开 bsp 的 UART
+ifneq ($(CONFIG_BSP_UART),y)
+$(error log goes to USART10 and needs CONFIG_BSP_UART=y)
+endif
+
+# 3. 所有为 y 的配置项，生成 -DCONFIG_XXX（C 代码里用 #ifdef CONFIG_XXX 判断）
+CFG_VARS := $(sort $(filter CONFIG_%,$(.VARIABLES)))
+CFG_DEFS := $(foreach v,$(CFG_VARS),$(if $(filter y,$($(v))),-D$(v)))
