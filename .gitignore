@@ -1,0 +1,62 @@
+# GCC / arm-none-eabi（Makefile 的 BUILD_DIR = build）
+build/
+output/
+Debug/
+Release/
+*.o
+*.obj
+*.d
+*.su
+*.cyclo
+*.elf
+*.axf
+*.bin
+*.hex
+*.map
+*.list
+*.lst
+*.a
+
+# STM32CubeMX 本地缓存（.ioc 需要提交）
+.mxproject
+
+# STM32CubeIDE
+.metadata/
+.settings/
+*.launch
+RemoteSystemsTempFiles/
+
+# Keil MDK（工程文件 *.uvprojx 需要提交）
+*.uvoptx
+*.uvguix.*
+*.bak
+*.crf
+*.lnp
+*.build_log.htm
+*.iex
+JLinkLog.txt
+JLinkSettings.ini
+*.dbgconf
+
+# IAR EWARM
+EWARM/settings/
+*.ewt
+*.ewd
+*.dep
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+*~
+
+# 系统
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# 上位机 / 脚本缓存
+__pycache__/
+*.py[cod]
+.venv/
+venv/
