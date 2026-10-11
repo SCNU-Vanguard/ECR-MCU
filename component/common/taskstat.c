@@ -2,6 +2,9 @@
 #include "component/log/log.h"
 #include "osal/period.h"
 #include "osal/event.h"
+#ifdef CONFIG_SHELL
+#include "component/shell/shell_cmd.h"
+#endif
 
 #ifndef CONFIG_TASK_STATS
 void task_stats_dump(void) { LOGW("stats", "CONFIG_TASK_STATS is off"); }
@@ -90,4 +93,17 @@ void task_stats_dump(void)
     period_foreach(dump_period, NULL);
     event_foreach(dump_event, NULL);
 }
+#endif
+
+#ifdef CONFIG_SHELL
+/* shell 命令 task_stats：打印所有任务（周期任务、事件任务）从上次触发到现在的运行统计，然后清零重新统计：
+ * 周期任务的实测频率、执行时间、周期抖动、overrun、栈余量；事件任务的投递/处理/丢弃数、唤醒延迟等（第 8.6 节）。
+ * CONFIG_TASK_STATS = n 时只打印一条提示。 */
+static int shell_task_stats(int argc, char *argv[])
+{
+    (void)argc; (void)argv;
+    task_stats_dump();
+    return 0;
+}
+SHELL_CMD(task_stats, shell_task_stats, print_and_clear_all_task_stats)
 #endif

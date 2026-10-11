@@ -13,15 +13,15 @@ BSP_UART_BUFFERS(referee,  256, 128,  512);
 BSP_UART_BUFFERS(inter,    128, 128,  512);
 BSP_UART_BUFFERS(dbus,      36,   1,    2);        /* DBUS 只收，发送缓冲占位 */
 BSP_UART_BUFFERS(imgtrans, 512, 128,  512);
-BSP_UART_BUFFERS(logu,      16, 128, 2048);        /* 日志口：主要是发；RX 只在统计触发自测里用 */
+BSP_UART_BUFFERS(logu,      16, 128, 2048);        /* 日志口：主要是发；RX 只给 shell 用 */
 
 const bsp_uart_cfg_t board_uart_cfg[UART_NUM] = {
     [UART_REFEREE]    = BSP_UART_CFG(referee,  &huart1,  1, NULL, 0),
     [UART_INTERBOARD] = BSP_UART_CFG(inter,    &huart2,  1, RS485_DE_GPIO_Port, RS485_DE_Pin),
     [UART_DBUS]       = BSP_UART_CFG(dbus,     &huart5,  1, NULL, 0),
     [UART_IMGTRANS]   = BSP_UART_CFG(imgtrans, &huart7,  1, NULL, 0),
-#if defined(CONFIG_ST_STATS) || defined(CONFIG_SHELL)
-    [UART_LOG]        = BSP_UART_CFG(logu,     &huart10, 1, NULL, 0),   /* 接 USB-TTL 的 RX：自测里发字符 s 触发统计，或接 shell */
+#if defined(CONFIG_SHELL)
+    [UART_LOG]        = BSP_UART_CFG(logu,     &huart10, 1, NULL, 0),   /* 接 USB-TTL 的 RX：给 shell 输入命令 */
 #else
     [UART_LOG]        = BSP_UART_CFG(logu,     &huart10, 0, NULL, 0),   /* 只发不收 */
 #endif

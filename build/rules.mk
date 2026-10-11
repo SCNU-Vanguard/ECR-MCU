@@ -33,7 +33,6 @@ FORCE:
 $(OBJ)/platform/%.o: CFLAGS += -Wno-missing-field-initializers
 # 第三方库源码不改，不为它们的警告改代码
 $(OBJ)/component/shell/letter-shell/%.o: CFLAGS += -Wno-cast-function-type -Wno-sign-compare
-$(OBJ)/component/shell/shell_cmds.o: CFLAGS += -Wno-cast-function-type
 $(OBJ)/component/log/easylogger/%.o: CFLAGS += -Wno-sign-compare -Wno-unused-parameter
 $(OBJ)/%.o: %.c $(STAMP)
 	@mkdir -p $(dir $@)
@@ -56,5 +55,20 @@ $(OUT)/%.hex: $(OUT)/%.elf
 
 clean:
 	rm -rf $(OUT)
+
+# ---- 烧录 / 调试（DAPLink + pyOCD）----
+# make p=h7 r=demo flash    烧录并复位
+# make p=h7 r=demo gdb      启动 pyOCD gdb server（端口 3333），再用 arm-none-eabi-gdb 连接
+PYOCD  ?= py -m pyocd
+PYOCD_TARGET_stm32h723vgt6 := stm32h723vgtx
+PYOCD_TARGET_stm32f407igh6 := stm32f407ig
+PYOCD_TARGET := $(PYOCD_TARGET_$(MCU))
+PYOCD_FREQ ?= 4000000
+
+.PHONY: flash gdb
+flash: $(OUT)/$(NAME).elf
+	$(PYOCD) flash -t $(PYOCD_TARGET) -f $(PYOCD_FREQ) $<
+gdb:
+	$(PYOCD) gdbserver -t $(PYOCD_TARGET) -f $(PYOCD_FREQ)
 
 -include $(OBJS:.o=.d)

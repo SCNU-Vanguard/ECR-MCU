@@ -1,3 +1,5 @@
+docs
+
 # GCC / arm-none-eabi（Makefile 的 BUILD_DIR = build）
 platform/*/build/
 /output/

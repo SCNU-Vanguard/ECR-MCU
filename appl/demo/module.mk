@@ -1,2 +1,4 @@
 d := $(dir $(lastword $(MAKEFILE_LIST)))
-obj-$(CONFIG_APPL_DEMO) += $(d)demo_tasks.o
+ifeq ($(CONFIG_APPL_DEMO),y)
+obj-$(CONFIG_CDD_LED_WS2812) += $(d)led_ctrl.o
+endif

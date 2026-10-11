@@ -1,7 +1,6 @@
 # ecr-mcu 顶层入口。用法：
 #   make p=h7 r=demo                       # p = 平台，r = 机器人（兵种）
 #   make p=h7 r=demo OPT=-O2 V=1           # 发布优化 / 显示完整命令
-#   make p=h7 r=demo CONFIG_ST_CAN_WIRED=y # 命令行临时覆盖配置项
 #   make p=h7 r=demo clean
 #   make                                        # 等价于 make p=h7 r=demo
 # 配置文件：robot/<r>/<r>_<p>.config（CONFIG_XXX = y | n）
