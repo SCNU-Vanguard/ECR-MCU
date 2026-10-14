@@ -12,9 +12,16 @@ dji_motor_t chassis_motor[4];
 static int32_t robot_bind_motors(void)
 {
 #ifdef CONFIG_ROBOT_BIND_CHASSIS
-    for (int i = 0; i < 4; i++) {
-        int32_t r = dji_motor_register(&chassis_motor[i], CHASSIS_BUS, (uint8_t)(CHASSIS_ID_BASE + i), DJI_M3508);
-        if (r != ERR_OK) { LOGE("robot", "bind chassis[%d] failed: %d", i, (int)r); return r; }
+    for (int motor_index = 0; motor_index < 4; motor_index++)
+    {
+        int32_t register_ret = dji_motor_register(&chassis_motor[motor_index], CHASSIS_BUS,
+                                                  (uint8_t)(CHASSIS_ID_BASE + motor_index), DJI_M3508);
+
+        if (register_ret != ERR_OK)
+        {
+            LOGE("robot", "bind chassis[%d] failed: %d", motor_index, (int)register_ret);
+            return register_ret;
+        }
     }
 #endif
     return ERR_OK;

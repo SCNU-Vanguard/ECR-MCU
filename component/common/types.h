@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#define ARRAY_SIZE(a)   (sizeof(a) / sizeof((a)[0]))
+#define ARRAY_SIZE(array)   (sizeof(array) / sizeof((array)[0]))
 
 /* DMA 缓冲区：放进 .dma_nc 段（链接到 AXI SRAM，MPU 已配成不可缓存）。
  * 不能放 DTCM（默认 .bss/.data 所在）：DMA1/DMA2 访问不到 DTCM。 */

@@ -9,10 +9,10 @@ extern USBD_HandleTypeDef hUsbDeviceHS;   /* usb_device.c 里定义，没有头�
 
 #define TX_CHUNK  512u
 
-static uint8_t txq_mem[2048];
+static uint8_t tx_queue_mem[2048];
 static uint8_t tx_chunk[TX_CHUNK];          /* USB_OTG 没开 DMA（FIFO 模式），普通 RAM 即可 */
-static struct __cqueue tx_q;
-static struct event_task *rx_ev;
+static struct __cqueue tx_queue;
+static struct event_task *rx_event;
 static volatile uint8_t tx_busy;
 
 bool bsp_usb_connected(void)
@@ -24,26 +24,43 @@ bool bsp_usb_connected(void)
 
 static void tx_kick(void)                   /* 调用时已屏蔽中断，或在 USB 中断里 */
 {
-    if (tx_busy || !bsp_usb_connected()) { return; }
-    uint32_t n = cqueue_out(&tx_q, tx_chunk, TX_CHUNK);
-    if (n == 0u) { return; }
-    if (CDC_Transmit_HS(tx_chunk, (uint16_t)n) == USBD_OK) { tx_busy = 1u; }   /* 失败：这一块丢弃 */
+    if (tx_busy || !bsp_usb_connected())
+    {
+        return;
+    }
+    uint32_t chunk_length = cqueue_out(&tx_queue, tx_chunk, TX_CHUNK);
+
+    if (chunk_length == 0u)
+    {
+        return;
+    }
+    if (CDC_Transmit_HS(tx_chunk, (uint16_t)chunk_length) == USBD_OK)    /* 失败：这一块丢弃 */
+    {
+        tx_busy = 1u;
+    }
 }
 
 int32_t bsp_usb_write(const void *data, uint32_t len)
 {
-    uint32_t key = os_irq_save();
-    uint32_t n = cqueue_in(&tx_q, data, len);
+    uint32_t irq_key = os_irq_save();
+    uint32_t queued_length = cqueue_in(&tx_queue, data, len);
+
     tx_kick();
-    os_irq_restore(key);
-    return (int32_t)n;
+    os_irq_restore(irq_key);
+    return (int32_t)queued_length;
 }
 
-void bsp_usb_bind_event(struct event_task *t) { rx_ev = t; }
+void bsp_usb_bind_event(struct event_task *task)
+{
+    rx_event = task;
+}
 
 void bsp_usb_rx_isr(const uint8_t *buf, uint32_t len)
 {
-    if (rx_ev != NULL && len <= 0xFFFFu) { (void)event_post_isr(rx_ev, buf, (uint16_t)len); }
+    if (rx_event != NULL && len <= 0xFFFFu)
+    {
+        (void)event_post_isr(rx_event, buf, (uint16_t)len);
+    }
 }
 
 void bsp_usb_tx_done_isr(void)
@@ -54,6 +71,6 @@ void bsp_usb_tx_done_isr(void)
 
 static int32_t bsp_usb_init(void)
 {
-    return cqueue_init(&tx_q, txq_mem, sizeof txq_mem, 1u);
+    return cqueue_init(&tx_queue, tx_queue_mem, sizeof tx_queue_mem, 1u);
 }
 INIT_BSP(bsp_usb_init);

@@ -12,41 +12,72 @@ void task_stats_hw_init(void)
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 }
 
-uint32_t task_stats_now(void)           { return DWT->CYCCNT; }
-uint32_t task_stats_cycles_per_us(void) { return SystemCoreClock / 1000000u; }
-
-void task_stats_reset(struct task_stats *s)
+uint32_t task_stats_now(void)
 {
-    s->n = 0u;
-    s->exec_last = 0u; s->exec_min = 0xFFFFFFFFu; s->exec_max = 0u; s->exec_sum = 0u;
-    s->int_min = 0xFFFFFFFFu; s->int_max = 0u;
-    s->lat_max = 0u; s->lat_sum = 0u;
-    s->qmax = 0u;
+    return DWT->CYCCNT;
 }
 
-uint32_t task_stats_begin(struct task_stats *s, uint32_t stamp)
+uint32_t task_stats_cycles_per_us(void)
+{
+    return SystemCoreClock / 1000000u;
+}
+
+void task_stats_reset(struct task_stats *stats)
+{
+    stats->run_count = 0u;
+    stats->exec_last = 0u;
+    stats->exec_min = 0xFFFFFFFFu;
+    stats->exec_max = 0u;
+    stats->exec_sum = 0u;
+    stats->interval_min = 0xFFFFFFFFu;
+    stats->interval_max = 0u;
+    stats->latency_max = 0u;
+    stats->latency_sum = 0u;
+    stats->qmax = 0u;
+}
+
+uint32_t task_stats_begin(struct task_stats *stats, uint32_t stamp)
 {
     uint32_t now = DWT->CYCCNT;
-    uint32_t lat = now - stamp;                       /* 无符号减法：计数器回绕也正确 */
-    s->lat_sum += lat;
-    if (lat > s->lat_max) { s->lat_max = lat; }
-    if (s->started) {
-        uint32_t itv = now - s->last_start;
-        if (itv < s->int_min) { s->int_min = itv; }
-        if (itv > s->int_max) { s->int_max = itv; }
+    uint32_t latency = now - stamp;                   /* 无符号减法：计数器回绕也正确 */
+
+    stats->latency_sum += latency;
+    if (latency > stats->latency_max)
+    {
+        stats->latency_max = latency;
     }
-    s->started = true;
-    s->last_start = now;
+    if (stats->started)
+    {
+        uint32_t interval = now - stats->last_start;
+
+        if (interval < stats->interval_min)
+        {
+            stats->interval_min = interval;
+        }
+        if (interval > stats->interval_max)
+        {
+            stats->interval_max = interval;
+        }
+    }
+    stats->started = true;
+    stats->last_start = now;
     return now;
 }
 
-void task_stats_end(struct task_stats *s, uint32_t t0)
+void task_stats_end(struct task_stats *stats, uint32_t start_cycles)
 {
-    uint32_t e = DWT->CYCCNT - t0;
-    s->exec_last = e;
-    if (e < s->exec_min) { s->exec_min = e; }
-    if (e > s->exec_max) { s->exec_max = e; }
-    s->exec_sum += e;
-    s->n++;
+    uint32_t exec_cycles = DWT->CYCCNT - start_cycles;
+
+    stats->exec_last = exec_cycles;
+    if (exec_cycles < stats->exec_min)
+    {
+        stats->exec_min = exec_cycles;
+    }
+    if (exec_cycles > stats->exec_max)
+    {
+        stats->exec_max = exec_cycles;
+    }
+    stats->exec_sum += exec_cycles;
+    stats->run_count++;
 }
 #endif

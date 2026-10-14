@@ -5,13 +5,20 @@ extern const initcall_t __stop_init_region[];
 
 int32_t initcall_run_all(initcall_report_fn report)
 {
-    int32_t failed = 0;
-    for (const initcall_t *c = __start_init_region; c < __stop_init_region; c++) {
-        int32_t ret = c->fn();
-        if (ret != 0) {
-            failed++;
-            if (report != NULL) { report(c, ret); }
+    int32_t failed_count = 0;
+
+    for (const initcall_t *call = __start_init_region; call < __stop_init_region; call++)
+    {
+        int32_t ret = call->fn();
+
+        if (ret != 0)
+        {
+            failed_count++;
+            if (report != NULL)
+            {
+                report(call, ret);
+            }
         }
     }
-    return failed;
+    return failed_count;
 }

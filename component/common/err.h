@@ -1,6 +1,7 @@
 #ifndef COMMON_ERR_H__
 #define COMMON_ERR_H__
-enum {
+enum
+{
     ERR_OK      =  0,
     ERR_FAIL    = -1,
     ERR_INVAL   = -2,

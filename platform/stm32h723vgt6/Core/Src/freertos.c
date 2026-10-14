@@ -58,6 +58,12 @@ const osThreadAttr_t defaultTask_attributes = {
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
+static void framework_init_task(void *argument)
+{
+  (void)argument;
+  framework_init();   /* 框架入口：分级初始化 + 创建周期任务 */
+  osThreadExit();
+}
 
 /* USER CODE END FunctionPrototypes */
 
@@ -98,7 +104,15 @@ void MX_FREERTOS_Init(void) {
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
-  framework_init();   /* 框架入口：分级初始化 + 创建周期任务 */
+  /* 不能在这里直接调 framework_init()：调度器启动前创建任务/队列会让 FreeRTOS 的临界区嵌套计数
+   * 回不到 0，BASEPRI 一直停在 0x50，优先级 15 的 TIM7 时基被屏蔽，initcall 里的 HAL_Delay 永远等不到。
+   * 所以起一个一次性初始化任务，调度器跑起来后再执行，跑完自删。 */
+  const osThreadAttr_t init_attr = {
+    .name = "frameworkInit",
+    .stack_size = 3072,
+    .priority = (osPriority_t) osPriorityHigh,
+  };
+  osThreadNew(framework_init_task, NULL, &init_attr);
   /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */

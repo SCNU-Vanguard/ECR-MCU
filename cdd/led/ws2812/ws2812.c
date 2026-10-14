@@ -12,23 +12,35 @@
 #define BIT1     0xF8u
 #define RESET_BYTES  40u
 
-static uint8_t pixel[WS2812_NUM][3];                       /* GRB 顺序 */
-static uint8_t frame[WS2812_NUM * 24u + RESET_BYTES];
+static uint8_t pixels[WS2812_NUM][3];                      /* GRB 顺序 */
+static uint8_t frame_buffer[WS2812_NUM * 24u + RESET_BYTES];
 
-void ws2812_set(uint8_t idx, uint8_t r, uint8_t g, uint8_t b)
+void ws2812_set(uint8_t index, uint8_t red, uint8_t green, uint8_t blue)
 {
-    if (idx >= WS2812_NUM) { return; }
-    pixel[idx][0] = g; pixel[idx][1] = r; pixel[idx][2] = b;
+    if (index >= WS2812_NUM)
+    {
+        return;
+    }
+    pixels[index][0] = green;
+    pixels[index][1] = red;
+    pixels[index][2] = blue;
 }
 
 int32_t ws2812_refresh(void)
 {
-    uint8_t *p = frame;
-    for (uint32_t i = 0; i < WS2812_NUM; i++) {
-        for (uint32_t c = 0; c < 3u; c++) {
-            for (int bit = 7; bit >= 0; bit--) { *p++ = ((pixel[i][c] >> bit) & 1u) ? BIT1 : BIT0; }
+    uint8_t *cursor = frame_buffer;
+
+    for (uint32_t pixel_index = 0; pixel_index < WS2812_NUM; pixel_index++)
+    {
+        for (uint32_t color_index = 0; color_index < 3u; color_index++)
+        {
+            for (int bit = 7; bit >= 0; bit--)
+            {
+                *cursor = ((pixels[pixel_index][color_index] >> bit) & 1u) ? BIT1 : BIT0;
+                cursor++;
+            }
         }
     }
-    memset(p, 0, RESET_BYTES);
-    return bsp_spi_xfer(SPI_LED, BSP_SPI_NO_CS, frame, NULL, (uint16_t)sizeof frame);
+    memset(cursor, 0, RESET_BYTES);
+    return bsp_spi_xfer(SPI_LED, BSP_SPI_NO_CS, frame_buffer, NULL, (uint16_t)sizeof frame_buffer);
 }

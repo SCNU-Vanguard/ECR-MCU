@@ -6,8 +6,9 @@
  * shell 模块不依赖任何业务模块，命令再多也不会往 component/shell 里引依赖。
  *
  * 用法：
- *   static int shell_xxx(int argc, char *argv[]) { ... return 0; }   // argv[0] 是命令名
- *   SHELL_CMD(xxx, shell_xxx, 一句话说明)                             // 说明不用加引号，末尾不要加分号
+ *   static int shell_xxx(int argc, char *argv[])    // argv[0] 是命令名
+ *   (函数体按普通函数写，返回 0 表示成功)
+ *   SHELL_CMD(xxx, shell_xxx, 一句话说明)             // 说明不用加引号，末尾不要加分号
  * 命令在 shell_task 事件任务里执行，不要长时间阻塞；输出用 shell_out()，不要用 LOGx。 */
 #include "shell.h"
 

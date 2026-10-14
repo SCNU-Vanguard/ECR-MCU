@@ -5,12 +5,18 @@
 #include "osal/osal.h"
 #include "bsp/include/bsp_ids.h"
 
-typedef struct {
+typedef struct
+{
     SPI_HandleTypeDef *hspi;
     bool use_it;                 /* 该实例的 SPIx_IRQn 已在 CubeMX 里使能（本工程只有 SPI2）；否则只能轮询 */
 } bsp_spi_cfg_t;
 
-typedef struct { os_mutex_t lock; os_sem_t done; volatile int32_t result; } bsp_spi_state_t;
+typedef struct
+{
+    os_mutex_t lock;
+    os_sem_t   done;
+    volatile int32_t result;
+} bsp_spi_state_t;
 
 extern const bsp_spi_cfg_t board_spi_cfg[SPI_NUM];       /* 由 board.c 提供 */
 

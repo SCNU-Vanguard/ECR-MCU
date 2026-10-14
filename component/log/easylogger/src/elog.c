@@ -120,12 +120,12 @@ static EasyLogger elog;
 static char log_buf[ELOG_LINE_BUF_SIZE] = { 0 };
 /* level output info */
 static const char *level_output_info[] = {
-        [ELOG_LVL_ASSERT]  = "A/",
-        [ELOG_LVL_ERROR]   = "E/",
-        [ELOG_LVL_WARN]    = "W/",
-        [ELOG_LVL_INFO]    = "I/",
-        [ELOG_LVL_DEBUG]   = "D/",
-        [ELOG_LVL_VERBOSE] = "V/",
+        [ELOG_LVL_ASSERT]  = "[ASSERT]",   /* 本仓库改动：级别写成 [ERR] [WARN] [INFO]，时间块写成 <ms.us>，见下面 ELOG_FMT_TIME */
+        [ELOG_LVL_ERROR]   = "[ERR]",
+        [ELOG_LVL_WARN]    = "[WARN]",
+        [ELOG_LVL_INFO]    = "[INFO]",
+        [ELOG_LVL_DEBUG]   = "[DEBUG]",
+        [ELOG_LVL_VERBOSE] = "[VERB]",
 };
 
 #ifdef ELOG_COLOR_ENABLE
@@ -243,7 +243,7 @@ void elog_start(void) {
 #endif
 
     /* show version */
-    log_i("EasyLogger V%s is initialize success.", ELOG_SW_VERSION);
+    // log_i("EasyLogger V%s is initialize success.", ELOG_SW_VERSION);
 }
 
 /**
@@ -615,7 +615,7 @@ void elog_output(uint8_t level, const char *tag, const char *file, const char *f
     }
     /* package time, process and thread info */
     if (get_fmt_enabled(level, ELOG_FMT_TIME | ELOG_FMT_P_INFO | ELOG_FMT_T_INFO)) {
-        log_len += elog_strcpy(log_len, log_buf + log_len, "[");
+        log_len += elog_strcpy(log_len, log_buf + log_len, "<");   /* 本仓库改动：原为 "[" */
         /* package time info */
         if (get_fmt_enabled(level, ELOG_FMT_TIME)) {
             log_len += elog_strcpy(log_len, log_buf + log_len, elog_port_get_time());
@@ -634,7 +634,7 @@ void elog_output(uint8_t level, const char *tag, const char *file, const char *f
         if (get_fmt_enabled(level, ELOG_FMT_T_INFO)) {
             log_len += elog_strcpy(log_len, log_buf + log_len, elog_port_get_t_info());
         }
-        log_len += elog_strcpy(log_len, log_buf + log_len, "] ");
+        log_len += elog_strcpy(log_len, log_buf + log_len, ">");   /* 本仓库改动：原为 "] "，现在 > 后直接接正文 */
     }
     /* package file directory and name, function name and line number info */
     if (get_fmt_used_and_enabled_ptr(level, ELOG_FMT_DIR, file) ||

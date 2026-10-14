@@ -216,21 +216,21 @@ uint32_t os_time_ms(void);
 /**
  * @brief 是否显示shell信息
  */
-#define     SHELL_SHOW_INFO             1
+#define     SHELL_SHOW_INFO             0
 #endif /** SHELL_SHOW_INFO */
 
 #ifndef SHELL_CLS_WHEN_LOGIN
 /**
  * @brief 是否在登录后清除命令行
  */
-#define     SHELL_CLS_WHEN_LOGIN        1
+#define     SHELL_CLS_WHEN_LOGIN        0
 #endif /** SHELL_CLS_WHEN_LOGIN */
 
 #ifndef SHELL_DEFAULT_USER
 /**
  * @brief shell默认用户
  */
-#define     SHELL_DEFAULT_USER          "letter"
+#define     SHELL_DEFAULT_USER          "rmer"
 #endif /** SHELL_DEFAULT_USER */
 
 #ifndef SHELL_DEFAULT_USER_PASSWORD

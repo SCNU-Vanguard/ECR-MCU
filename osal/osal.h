@@ -13,8 +13,18 @@
  * 本工程由 HAL 时基 TIM7 的 1 kHz 中断驱动（见 bsp/tick）。 */
 #define OS_TICK_HZ       1000u
 
-typedef struct { SemaphoreHandle_t h; StaticSemaphore_t buf; } os_sem_t;     /* 二值信号量 */
-typedef struct { SemaphoreHandle_t h; StaticSemaphore_t buf; } os_mutex_t;
+/* 二值信号量 */
+typedef struct
+{
+    SemaphoreHandle_t handle;
+    StaticSemaphore_t storage;
+} os_sem_t;
+
+typedef struct
+{
+    SemaphoreHandle_t handle;
+    StaticSemaphore_t storage;
+} os_mutex_t;
 
 bool    os_in_isr(void);
 bool    os_running(void);
@@ -22,16 +32,16 @@ bool    os_running(void);
 uint32_t os_irq_save(void);
 void     os_irq_restore(uint32_t key);
 
-int32_t os_sem_init(os_sem_t *s);
-int32_t os_sem_take(os_sem_t *s, uint32_t timeout_ms);
-void    os_sem_give(os_sem_t *s);
-int32_t os_sem_give_isr(os_sem_t *s);       /* 中断里用；返回 ERR_BUSY 表示上一次还没被取走 */
+int32_t os_sem_init(os_sem_t *sem);
+int32_t os_sem_take(os_sem_t *sem, uint32_t timeout_ms);
+void    os_sem_give(os_sem_t *sem);
+int32_t os_sem_give_isr(os_sem_t *sem);       /* 中断里用；返回 ERR_BUSY 表示上一次还没被取走 */
 
-int32_t os_mutex_init(os_mutex_t *m);
-int32_t os_mutex_lock(os_mutex_t *m, uint32_t timeout_ms);
-void    os_mutex_unlock(os_mutex_t *m);
+int32_t os_mutex_init(os_mutex_t *mutex);
+int32_t os_mutex_lock(os_mutex_t *mutex, uint32_t timeout_ms);
+void    os_mutex_unlock(os_mutex_t *mutex);
 
-void     os_delay_ms(uint32_t ms);
+void     os_delay_ms(uint32_t delay_ms);
 uint32_t os_time_ms(void);                  /* 自启动毫秒数（FreeRTOS tick） */
 uint32_t os_task_stack_free(void *task);    /* 任务栈历史最小剩余（字）；task 是后端的任务句柄 */
 #endif

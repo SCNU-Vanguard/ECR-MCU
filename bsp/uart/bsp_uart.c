@@ -2,71 +2,111 @@
 #include "component/common/initcall.h"
 #include "component/common/err.h"
 
-static bsp_uart_state_t st[UART_NUM];
+static bsp_uart_state_t uart_states[UART_NUM];
 
-static int uart_find(const UART_HandleTypeDef *h)
+static int uart_find(const UART_HandleTypeDef *huart)
 {
-    for (int i = 0; i < UART_NUM; i++) {
-        if (board_uart_cfg[i].huart == h) { return i; }
+    for (int uart_index = 0; uart_index < UART_NUM; uart_index++)
+    {
+        if (board_uart_cfg[uart_index].huart == huart)
+        {
+            return uart_index;
+        }
     }
     return -1;
 }
 
-static inline void de_set(const bsp_uart_cfg_t *c, GPIO_PinState v)
+static inline void de_set(const bsp_uart_cfg_t *config, GPIO_PinState pin_state)
 {
-    if (c->de_port != NULL) { HAL_GPIO_WritePin(c->de_port, c->de_pin, v); }
+    if (config->direction_port != NULL)
+    {
+        HAL_GPIO_WritePin(config->direction_port, config->direction_pin, pin_state);
+    }
 }
 
 /* RX 是否为循环 DMA：由 CubeMX 里该 DMA 请求的 Mode 决定（Normal / Circular） */
-static inline bool rx_circular(const bsp_uart_cfg_t *c)
+static inline bool rx_circular(const bsp_uart_cfg_t *config)
 {
-    return c->huart->hdmarx != NULL && c->huart->hdmarx->Init.Mode == DMA_CIRCULAR;
+    return config->huart->hdmarx != NULL && config->huart->hdmarx->Init.Mode == DMA_CIRCULAR;
 }
 
 /* ---------------- 接收 ---------------- */
 static void rx_start(int id)
 {
-    const bsp_uart_cfg_t *c = &board_uart_cfg[id];
-    HAL_StatusTypeDef r;
-    st[id].last_pos = 0;
-    if (c->huart->hdmarx != NULL) {
-        r = HAL_UARTEx_ReceiveToIdle_DMA(c->huart, c->rx_buf, c->rx_len);
+    const bsp_uart_cfg_t *config = &board_uart_cfg[id];
+    HAL_StatusTypeDef hal_status;
+
+    uart_states[id].last_position = 0;
+    if (config->huart->hdmarx != NULL)
+    {
+        hal_status = HAL_UARTEx_ReceiveToIdle_DMA(config->huart, config->rx_buffer, config->rx_size);
         /* Normal 模式下把"半满"事件关掉：一次空闲 = 一次回调，不会在报文中间被切开 */
-        if (r == HAL_OK && !rx_circular(c)) { __HAL_DMA_DISABLE_IT(c->huart->hdmarx, DMA_IT_HT); }
-    } else {
-        r = HAL_UARTEx_ReceiveToIdle_IT(c->huart, c->rx_buf, c->rx_len);   /* 没配 DMA 时退化为中断接收 */
+        if (hal_status == HAL_OK && !rx_circular(config))
+        {
+            __HAL_DMA_DISABLE_IT(config->huart->hdmarx, DMA_IT_HT);
+        }
     }
-    if (r != HAL_OK) { st[id].err_cnt++; }
+    else
+    {
+        hal_status = HAL_UARTEx_ReceiveToIdle_IT(config->huart, config->rx_buffer, config->rx_size);   /* 没配 DMA 时退化为中断接收 */
+    }
+    if (hal_status != HAL_OK)
+    {
+        uart_states[id].error_count++;
+    }
 }
 
-static void rx_push(int id, const uint8_t *p, uint16_t n)
+static void rx_push(int id, const uint8_t *data, uint16_t length)
 {
-    bsp_uart_state_t *s = &st[id];
-    if (n == 0u) { return; }
-    s->rx_bytes += n;
-    if (s->ev != NULL) { (void)event_post_isr(s->ev, p, n); }    /* 拷贝进事件队列，任务里处理 */
-    else               { s->rx_unbound += n; }
+    bsp_uart_state_t *state = &uart_states[id];
+
+    if (length == 0u)
+    {
+        return;
+    }
+    state->rx_bytes += length;
+    if (state->event != NULL)
+    {
+        (void)event_post_isr(state->event, data, length);    /* 拷贝进事件队列，任务里处理 */
+    }
+    else
+    {
+        state->rx_unbound_count += length;
+    }
 }
 
 /* HAL 在"空闲线 / 缓冲半满 / 缓冲满"时调用；size = 缓冲区里目前已有的字节数 */
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
 {
     int id = uart_find(huart);
-    if (id < 0) { return; }
-    const bsp_uart_cfg_t *c = &board_uart_cfg[id];
-    bsp_uart_state_t *s = &st[id];
 
-    if (rx_circular(c)) {                        /* 循环：按 "上次位置 -> 当前位置" 取增量，可能绕回 */
-        if (size > c->rx_len) { size = c->rx_len; }
-        if (size >= s->last_pos) {
-            rx_push(id, c->rx_buf + s->last_pos, (uint16_t)(size - s->last_pos));
-        } else {
-            rx_push(id, c->rx_buf + s->last_pos, (uint16_t)(c->rx_len - s->last_pos));
-            rx_push(id, c->rx_buf, size);
+    if (id < 0)
+    {
+        return;
+    }
+    const bsp_uart_cfg_t *config = &board_uart_cfg[id];
+    bsp_uart_state_t *state = &uart_states[id];
+
+    if (rx_circular(config))                     /* 循环：按 "上次位置 -> 当前位置" 取增量，可能绕回 */
+    {
+        if (size > config->rx_size)
+        {
+            size = config->rx_size;
         }
-        s->last_pos = (size == c->rx_len) ? 0u : size;
-    } else {                                     /* Normal / 中断：每次都是从缓冲区头开始的一段，处理完重启 */
-        rx_push(id, c->rx_buf, size);
+        if (size >= state->last_position)
+        {
+            rx_push(id, config->rx_buffer + state->last_position, (uint16_t)(size - state->last_position));
+        }
+        else
+        {
+            rx_push(id, config->rx_buffer + state->last_position, (uint16_t)(config->rx_size - state->last_position));
+            rx_push(id, config->rx_buffer, size);
+        }
+        state->last_position = (size == config->rx_size) ? 0u : size;
+    }
+    else                                         /* Normal / 中断：每次都是从缓冲区头开始的一段，处理完重启 */
+    {
+        rx_push(id, config->rx_buffer, size);
         rx_start(id);
     }
 }
@@ -75,75 +115,118 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
 /* 调用时必须已屏蔽中断（os_irq_save）或本身就在串口中断里 */
 static void tx_kick(int id)
 {
-    const bsp_uart_cfg_t *c = &board_uart_cfg[id];
-    bsp_uart_state_t *s = &st[id];
-    if (s->tx_busy) { return; }
-    uint32_t n = cqueue_out(&s->tx_q, c->tx_buf, c->tx_len);
-    if (n == 0u) { return; }
-    de_set(c, GPIO_PIN_SET);                                     /* RS485：先拉高方向脚再发 */
-    HAL_StatusTypeDef r = (c->huart->hdmatx != NULL)
-        ? HAL_UART_Transmit_DMA(c->huart, c->tx_buf, (uint16_t)n)
-        : HAL_UART_Transmit_IT(c->huart, c->tx_buf, (uint16_t)n);
-    if (r != HAL_OK) { s->tx_drop += n; de_set(c, GPIO_PIN_RESET); return; }
-    s->tx_busy = 1u;
-    s->tx_bytes += n;
+    const bsp_uart_cfg_t *config = &board_uart_cfg[id];
+    bsp_uart_state_t *state = &uart_states[id];
+
+    if (state->tx_busy)
+    {
+        return;
+    }
+    uint32_t chunk_length = cqueue_out(&state->tx_queue, config->tx_buffer, config->tx_size);
+
+    if (chunk_length == 0u)
+    {
+        return;
+    }
+    de_set(config, GPIO_PIN_SET);                                /* RS485：先拉高方向脚再发 */
+    HAL_StatusTypeDef hal_status = (config->huart->hdmatx != NULL)
+        ? HAL_UART_Transmit_DMA(config->huart, config->tx_buffer, (uint16_t)chunk_length)
+        : HAL_UART_Transmit_IT(config->huart, config->tx_buffer, (uint16_t)chunk_length);
+
+    if (hal_status != HAL_OK)
+    {
+        state->tx_drop_count += chunk_length;
+        de_set(config, GPIO_PIN_RESET);
+        return;
+    }
+    state->tx_busy = 1u;
+    state->tx_bytes += chunk_length;
 }
 
 /* 最后一个停止位发完（TC）后 HAL 才调用；DMA 与中断发送都是如此 */
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
     int id = uart_find(huart);
-    if (id < 0) { return; }
-    st[id].tx_busy = 0u;
+
+    if (id < 0)
+    {
+        return;
+    }
+    uart_states[id].tx_busy = 0u;
     tx_kick(id);                                                 /* 队列里还有就接着发，方向脚保持拉高 */
-    if (!st[id].tx_busy) { de_set(&board_uart_cfg[id], GPIO_PIN_RESET); }
+    if (!uart_states[id].tx_busy)
+    {
+        de_set(&board_uart_cfg[id], GPIO_PIN_RESET);
+    }
 }
 
 /* 溢出/帧错误/奇偶错误：HAL 已中止传输，这里计数并重启 */
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
     int id = uart_find(huart);
-    if (id < 0) { return; }
-    st[id].err_cnt++;
-    if (huart->gState == HAL_UART_STATE_READY) {
-        st[id].tx_busy = 0u;
+
+    if (id < 0)
+    {
+        return;
+    }
+    uart_states[id].error_count++;
+    if (huart->gState == HAL_UART_STATE_READY)
+    {
+        uart_states[id].tx_busy = 0u;
         de_set(&board_uart_cfg[id], GPIO_PIN_RESET);
     }
-    if (huart->RxState == HAL_UART_STATE_READY && board_uart_cfg[id].rx_len != 0u) { rx_start(id); }
+    if (huart->RxState == HAL_UART_STATE_READY && board_uart_cfg[id].rx_size != 0u)
+    {
+        rx_start(id);
+    }
 }
 
 /* ---------------- 对外接口 ---------------- */
 int32_t bsp_uart_write(uart_id_t id, const void *data, uint32_t len)
 {
-    if ((unsigned)id >= UART_NUM) { return ERR_INVAL; }
-    uint32_t key = os_irq_save();                /* 多个任务可能同时写：入队 + 启动发送整体加锁（微秒级） */
-    uint32_t n = cqueue_in(&st[id].tx_q, data, len);
+    if ((unsigned)id >= UART_NUM)
+    {
+        return ERR_INVAL;
+    }
+    uint32_t irq_key = os_irq_save();                /* 多个任务可能同时写：入队 + 启动发送整体加锁（微秒级） */
+    uint32_t queued_length = cqueue_in(&uart_states[id].tx_queue, data, len);
+
     tx_kick((int)id);
-    os_irq_restore(key);
-    return (int32_t)n;
+    os_irq_restore(irq_key);
+    return (int32_t)queued_length;
 }
 
-void bsp_uart_bind_event(uart_id_t id, struct event_task *t)
+void bsp_uart_bind_event(uart_id_t id, struct event_task *task)
 {
-    if ((unsigned)id < UART_NUM) { st[id].ev = t; }
+    if ((unsigned)id < UART_NUM)
+    {
+        uart_states[id].event = task;
+    }
 }
 
 const bsp_uart_state_t *bsp_uart_state(uart_id_t id)
 {
-    return ((unsigned)id < UART_NUM) ? &st[id] : NULL;
+    return ((unsigned)id < UART_NUM) ? &uart_states[id] : NULL;
 }
 
 static int32_t bsp_uart_init(void)
 {
     int32_t ret = ERR_OK;
-    for (int i = 0; i < UART_NUM; i++) {
-        const bsp_uart_cfg_t *c = &board_uart_cfg[i];
-        if (cqueue_init(&st[i].tx_q, c->txq_mem, c->txq_size, 1u) != ERR_OK) {
+
+    for (int uart_index = 0; uart_index < UART_NUM; uart_index++)
+    {
+        const bsp_uart_cfg_t *config = &board_uart_cfg[uart_index];
+
+        if (cqueue_init(&uart_states[uart_index].tx_queue, config->tx_queue_mem, config->tx_queue_size, 1u) != ERR_OK)
+        {
             ret = ERR_INVAL;                     /* 队列大小不是 2 的幂：立刻报错，不要静默 */
             continue;
         }
-        de_set(c, GPIO_PIN_RESET);
-        if (c->rx_len != 0u) { rx_start(i); }
+        de_set(config, GPIO_PIN_RESET);
+        if (config->rx_size != 0u)
+        {
+            rx_start(uart_index);
+        }
     }
     return ret;
 }

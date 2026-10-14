@@ -13,4 +13,7 @@ void HAL_IncTick(void)
     period_tick_isr();
 }
 
-uint32_t bsp_tick_ms(void) { return HAL_GetTick(); }
+uint32_t bsp_tick_ms(void)
+{
+    return HAL_GetTick();
+}

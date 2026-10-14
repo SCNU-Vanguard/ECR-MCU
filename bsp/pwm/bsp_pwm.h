@@ -4,7 +4,8 @@
 #include "component/common/types.h"
 #include "bsp/include/bsp_ids.h"
 
-typedef struct {
+typedef struct
+{
     TIM_HandleTypeDef *htim;
     uint32_t channel;            /* TIM_CHANNEL_x */
     uint32_t timer_clk_hz;       /* 定时器输入时钟：见 .ioc 的 TimxOutputFreq_Value（本工程 TIM3/TIM12 均为 240 MHz） */
