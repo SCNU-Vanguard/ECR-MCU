@@ -78,7 +78,7 @@ int32_t event_post_isr(struct event_task *task, const void *data, uint16_t len)
         return ERR_BUSY;
     }
     task->posted++;
-#ifdef CONFIG_TASK_STATS
+#ifdef CONFIG_OSAL_TASK_STATS
     uint32_t pending_count = os_event_pending_isr(task);           /* 队列水位 */
 
     if (pending_count > task->stats.qmax)

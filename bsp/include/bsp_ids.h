@@ -10,7 +10,7 @@ typedef enum
     UART_IMGTRANS,      /* 图传通信             */
     UART_LOG,           /* 日志打印             */
     UART_NUM
-} uart_id_t;
+} uart_id_e;
 
 /* 具体挂什么电机由兵种配置决定 */
 typedef enum
@@ -19,26 +19,26 @@ typedef enum
     CAN_BUS1,
     CAN_BUS2,
     CAN_NUM
-} can_id_t;
+} can_id_e;
 
 typedef enum
 {
     SPI_IMU,
     SPI_LED,
     SPI_NUM
-} spi_id_t;
+} spi_id_e;
 
 typedef enum
 {
     PWM_HEATER,
     PWM_BUZZER,
     PWM_NUM
-} pwm_id_t;
+} pwm_id_e;
 
 typedef enum
 {
     GPIO_ACCEL_CS,
     GPIO_GYRO_CS,
     GPIO_NUM
-} gpio_id_t;
+} gpio_id_e;
 #endif

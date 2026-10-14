@@ -1,5 +1,3 @@
 d := $(dir $(lastword $(MAKEFILE_LIST)))
-ifeq ($(CONFIG_APPL_DEMO),y)
-obj-$(CONFIG_CDD_LED_WS2812) += $(d)led_ctrl.o
-obj-$(CONFIG_CDD_BUZZER) += $(d)buzzer_ctrl.o
-endif
+obj-$(CONFIG_APPL_DEMO_LED_CTRL) += $(d)led_ctrl.o
+obj-$(CONFIG_APPL_DEMO_BUZZER_CTRL) += $(d)buzzer_ctrl.o

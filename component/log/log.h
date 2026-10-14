@@ -3,8 +3,8 @@
 
 /* log 模块：由 EasyLogger 实现（第 19.4 节）。
  * LOGx(tag, fmt, ...) 底层转成 elog_output；中断里调用直接丢弃（EasyLogger 用静态行缓冲 + 互斥量，不能在中断里用）。
- * CONFIG_LOG=n 时 LOGx 展开为空，调用方不用改。 */
-#ifdef CONFIG_LOG
+ * CONFIG_COMPONENT_LOG=n 时 LOGx 展开为空，调用方不用改。 */
+#ifdef CONFIG_COMPONENT_LOG
 #include "osal/osal.h"
 #include "elog.h"
 #define LOG_EL(level, tag, fmt, ...) \

@@ -1,0 +1,126 @@
+#ifndef CDD_MOTOR_H__
+#define CDD_MOTOR_H__
+#include "component/common/types.h"
+#include "component/pid/pid.h"
+#include "bsp/include/bsp_ids.h"
+
+/* 电机框架的公共部分：所有 CAN 电机（DJI、DM……）的"绑定信息 + 通用反馈 + 控制器 + 在线/错误判断"。
+ * 框架只关心电机挂在哪条 CAN 总线、反馈帧 ID 是什么，不关心电机属于底盘还是云台。
+ * 具体电机（dji_motor_t、dm_motor_t）的第一个成员都是 motor_t，可以直接取地址当 motor_t * 用。
+ *
+ * 使用流程：
+ *   1. robot 里按表注册（绑定总线），注册时可以带一份控制配置（PID 参数、外部反馈、前馈）
+ *   2. 应用里 motor_set_target() 设目标，motor_set_active(motor, true) 打开输出
+ *   3. 周期任务里调用 motor_control_all()：自动按各电机的控制模式计算，并按各厂家的报文格式发到各自绑定的总线 */
+
+typedef enum
+{
+    MOTOR_TYPE_M3508,
+    MOTOR_TYPE_M2006,
+    MOTOR_TYPE_GM6020,
+    MOTOR_TYPE_DM4310,
+    MOTOR_TYPE_DM8009P,
+} motor_type_e;
+
+/* 控制模式 = 最外层闭环：
+ *   TORQUE：目标就是转矩给定（DJI：电流/电压原始值，DM：N·m），不做速度环、位置环
+ *   SPEED ：目标是转速 rad/s，速度环输出转矩给定
+ *   ANGLE ：目标是角度 rad，角度环输出转速给定，再进速度环（DM 的硬件位置模式由电机自己闭环，见 dm_motor.h） */
+typedef enum
+{
+    MOTOR_CONTROL_TORQUE,
+    MOTOR_CONTROL_SPEED,
+    MOTOR_CONTROL_ANGLE,
+} motor_control_mode_e;
+
+/* 控制选项：外部反馈和前馈都是 float 指针，NULL 表示不用 */
+typedef struct
+{
+    const float *angle_feedback;           /* 外部角度反馈 rad（如 IMU），NULL = 用电机自己的单圈角度。角度环固定用单圈角度并把误差回绕到 ±pi */
+    const float *speed_feedback;           /* 外部速度反馈 rad/s，NULL = 用电机自己的 */
+    const float *speed_feedforward;        /* 速度前馈 rad/s，加在速度环给定上 */
+    const float *torque_feedforward;       /* 转矩前馈，加在转矩给定上 */
+} motor_control_options_t;
+
+/* 控制配置：两个环（角度、速度）的 PID 参数 + 选项。注册时传给各厂家的 register；传 NULL = 不用软件控制（DJI 可直接 dji_motor_set_cmd） */
+typedef struct
+{
+    pid_config_t            angle_pid;
+    pid_config_t            speed_pid;
+    motor_control_options_t options;
+} motor_control_config_t;
+
+/* 错误位：motor_error() 的返回值 */
+#define MOTOR_ERROR_LOST    (1u << 0)      /* 超过 timeout_ms 没收到反馈（或从未收到过） */
+#define MOTOR_ERROR_FAULT   (1u << 1)      /* 电机自己上报了故障（DM 状态码 3、4、5、8..E） */
+
+#define MOTOR_MAX_COUNT     16             /* 所有厂家的电机加起来最多注册多少个 */
+
+typedef struct
+{
+    /* 绑定信息：由各厂家的 register 函数填写 */
+    can_id_e     bus;
+    motor_type_e type;
+    uint16_t     feedback_id;              /* 这条总线上该电机反馈帧的标准帧 ID，同一总线上不能重复 */
+    bool         reverse;                  /* true：电机方向反装——反馈量（角度、速度、转矩）取反，输出也取反，应用层看到的方向不变 */
+    uint32_t     timeout_ms;               /* 超过这么久没收到反馈 = 离线 */
+
+    /* 通用反馈：在事件任务里更新，已经应用了 reverse */
+    bool         got_first;                /* 是否收到过至少一帧反馈 */
+    uint32_t     rx_ms;                    /* 最近一次收到反馈的时刻（bsp_tick_ms） */
+    uint32_t     error_flags;              /* 电机自己上报的故障位（MOTOR_ERROR_FAULT） */
+    float        single_angle_rad;         /* 单圈角度，[-pi, pi) */
+    float        total_angle_rad;          /* 多圈累计角度，rad */
+    float        speed_rad_s;              /* 转速，rad/s */
+    float        torque;                   /* 实际转矩：DJI 为反馈的电流原始值，DM 为 N·m */
+    float        temperature;              /* 摄氏度（DJI：电机温度；DM：转子温度） */
+
+    /* 控制：由 motor_set_target / motor_set_active 修改，由 motor_control_all 使用 */
+    bool                    has_control;   /* 注册时给了控制配置 */
+    bool                    active;        /* false：输出清零/保持，控制器清零 */
+    motor_control_mode_e    control_mode;
+    float                   target;
+    float                   output;        /* 级联计算的结果（转矩给定，用户方向，未应用 reverse）；DM 仅软件转矩模式有意义。钩子可以修改它 */
+    motor_control_options_t options;
+    pid_controller_t        angle_pid;
+    pid_controller_t        speed_pid;
+} motor_t;
+
+/* 把电机登记到框架里：检查总线号、总线上反馈 ID 是否冲突、数量是否超限。
+ * 各厂家的 register 函数在填好绑定信息后调用它。返回 ERR_INVAL / ERR_BUSY / ERR_NOMEM / ERR_OK */
+int32_t motor_registry_add(motor_t *motor);
+
+/* 遍历已登记的电机：index 从 0 开始，超出返回 NULL */
+motor_t *motor_registry_get(uint8_t index);
+
+/* 在线：收到过反馈，并且距上一次反馈不超过 timeout_ms */
+bool     motor_online(const motor_t *motor);
+/* 错误位：电机自己上报的故障 | 离线（MOTOR_ERROR_LOST） */
+uint32_t motor_error(const motor_t *motor);
+
+/* ---- 控制 ---- */
+/* 各厂家 register 里调用：保存控制配置并初始化两个 PID；config 为 NULL 表示不用软件控制 */
+void motor_control_setup(motor_t *motor, const motor_control_config_t *config);
+/* 设置控制模式和目标值（角度 rad / 转速 rad/s / 转矩给定）。
+ * 没有控制配置的电机也能设置，但只有硬件自己闭环的模式（DM 的 MIT 原生/位置速度/速度/力位混合）会生效，
+ * 需要软件 PID 的组合没有控制配置时 DJI 输出 0，DM 发保持帧 */
+int32_t motor_set_target(motor_t *motor, motor_control_mode_e mode, float target);
+/* 打开/关闭输出。关闭：DJI 发 0，DM 发保持帧；同时清零两个 PID */
+void motor_set_active(motor_t *motor, bool active);
+
+/* 控制器的两个环，各厂家按自己电机的硬件能力选用（DJI/DM 电机内部已经闭好电流/转矩环，所以软件不做转矩环）：
+ *   角度环：目标角度 -> 速度给定（不含前馈）
+ *   速度环：速度给定 + 速度前馈 -> 转矩给定（转矩前馈由调用者用 motor_torque_feedforward 加上） */
+float motor_angle_loop(motor_t *motor, float angle_target);
+float motor_speed_loop(motor_t *motor, float speed_reference);
+float motor_speed_feedforward(const motor_t *motor);
+float motor_torque_feedforward(const motor_t *motor);
+void  motor_pids_clear(motor_t *motor);
+
+/* ---- 一个函数：按各电机的控制模式计算，并按 DJI / DM 各自的报文格式发到各自绑定的总线 ---- */
+/* 返回成功发出的帧数。要求周期调用（DM 的反馈帧是问询式的，只有收到控制帧才会回复）。
+ * 计算完、发送前会调用一次已设置的钩子（功率限制等可以挂在这里，通过 motor_registry_get 改各电机的输出） */
+int32_t motor_control_all(void);
+void    motor_set_output_hook(void (*hook)(void));
+
+#endif

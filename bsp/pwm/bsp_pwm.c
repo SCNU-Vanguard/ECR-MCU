@@ -1,12 +1,12 @@
 #include "bsp/pwm/bsp_pwm.h"
 #include "component/common/err.h"
 
-static inline const bsp_pwm_cfg_t *pwm_config(pwm_id_t id)
+static inline const bsp_pwm_cfg_t *pwm_config(pwm_id_e id)
 {
     return ((unsigned)id < PWM_NUM) ? &board_pwm_cfg[id] : NULL;
 }
 
-int32_t bsp_pwm_start(pwm_id_t id)
+int32_t bsp_pwm_start(pwm_id_e id)
 {
     const bsp_pwm_cfg_t *config = pwm_config(id);
 
@@ -17,7 +17,7 @@ int32_t bsp_pwm_start(pwm_id_t id)
     return (HAL_TIM_PWM_Start(config->htim, config->channel) == HAL_OK) ? ERR_OK : ERR_IO;
 }
 
-int32_t bsp_pwm_stop(pwm_id_t id)
+int32_t bsp_pwm_stop(pwm_id_e id)
 {
     const bsp_pwm_cfg_t *config = pwm_config(id);
 
@@ -28,7 +28,7 @@ int32_t bsp_pwm_stop(pwm_id_t id)
     return (HAL_TIM_PWM_Stop(config->htim, config->channel) == HAL_OK) ? ERR_OK : ERR_IO;
 }
 
-int32_t bsp_pwm_set_duty(pwm_id_t id, uint32_t permille)
+int32_t bsp_pwm_set_duty(pwm_id_e id, uint32_t permille)
 {
     const bsp_pwm_cfg_t *config = pwm_config(id);
 
@@ -46,7 +46,7 @@ int32_t bsp_pwm_set_duty(pwm_id_t id, uint32_t permille)
     return ERR_OK;
 }
 
-int32_t bsp_pwm_set_freq(pwm_id_t id, uint32_t hz)
+int32_t bsp_pwm_set_freq(pwm_id_e id, uint32_t hz)
 {
     const bsp_pwm_cfg_t *config = pwm_config(id);
 

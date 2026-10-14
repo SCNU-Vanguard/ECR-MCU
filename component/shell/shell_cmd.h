@@ -2,7 +2,7 @@
 #define SHELL_CMD_H__
 /* 给各模块注册 shell 命令用的头文件。
  * 约定：每个模块在自己的目录里写 xxx_shell.c，用 SHELL_CMD 注册自己的命令，
- * 并在自己的 module.mk 里写 obj-$(CONFIG_SHELL) += $(d)xxx_shell.o（模块没开、shell 没开都不会编译）。
+ * 并在自己的 module.mk 里写 obj-$(CONFIG_COMPONENT_SHELL) += $(d)xxx_shell.o（模块没开、shell 没开都不会编译）。
  * shell 模块不依赖任何业务模块，命令再多也不会往 component/shell 里引依赖。
  *
  * 用法：

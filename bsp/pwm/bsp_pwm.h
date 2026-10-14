@@ -13,10 +13,10 @@ typedef struct
 
 extern const bsp_pwm_cfg_t board_pwm_cfg[PWM_NUM];       /* 由 board.c 提供 */
 
-int32_t bsp_pwm_start(pwm_id_t id);
-int32_t bsp_pwm_stop(pwm_id_t id);
+int32_t bsp_pwm_start(pwm_id_e id);
+int32_t bsp_pwm_stop(pwm_id_e id);
 /* 占空比 0..1000（千分比），按当前 ARR 换算 CCR */
-int32_t bsp_pwm_set_duty(pwm_id_t id, uint32_t permille);
+int32_t bsp_pwm_set_duty(pwm_id_e id, uint32_t permille);
 /* 改频率：保持 PSC 不变，只改 ARR，并按原占空比重算 CCR。适用于蜂鸣器变音调 */
-int32_t bsp_pwm_set_freq(pwm_id_t id, uint32_t hz);
+int32_t bsp_pwm_set_freq(pwm_id_e id, uint32_t hz);
 #endif

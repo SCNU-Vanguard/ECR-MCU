@@ -16,7 +16,7 @@ static int spi_find(const SPI_HandleTypeDef *hspi)
     return -1;
 }
 
-int32_t bsp_spi_xfer(spi_id_t bus, gpio_id_t cs, const uint8_t *tx, uint8_t *rx, uint16_t len)
+int32_t bsp_spi_xfer(spi_id_e bus, gpio_id_e cs, const uint8_t *tx, uint8_t *rx, uint16_t len)
 {
     if ((unsigned)bus >= SPI_NUM || tx == NULL || len == 0u)
     {

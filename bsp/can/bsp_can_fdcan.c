@@ -28,7 +28,7 @@ static int can_find(const FDCAN_HandleTypeDef *hfdcan)
     return -1;
 }
 
-int32_t bsp_can_subscribe(can_id_t bus, uint32_t id_low, uint32_t id_high, can_rx_cb_t callback, void *context)
+int32_t bsp_can_subscribe(can_id_e bus, uint32_t id_low, uint32_t id_high, can_rx_cb_t callback, void *context)
 {
     if ((unsigned)bus >= CAN_NUM || callback == NULL || id_low > id_high)
     {
@@ -53,7 +53,7 @@ int32_t bsp_can_subscribe(can_id_t bus, uint32_t id_low, uint32_t id_high, can_r
 }
 
 /* 订阅回调：把帧拷成 can_event_t 投递给事件任务（context 就是事件任务） */
-static void post_to_event(can_id_t bus, const can_frame_t *frame, void *context)
+static void post_to_event(can_id_e bus, const can_frame_t *frame, void *context)
 {
     can_event_t event;
 
@@ -67,12 +67,12 @@ static void post_to_event(can_id_t bus, const can_frame_t *frame, void *context)
     (void)event_post_isr((struct event_task *)context, &event, (uint16_t)sizeof event);
 }
 
-int32_t bsp_can_subscribe_event(can_id_t bus, uint32_t id_low, uint32_t id_high, struct event_task *task)
+int32_t bsp_can_subscribe_event(can_id_e bus, uint32_t id_low, uint32_t id_high, struct event_task *task)
 {
     return bsp_can_subscribe(bus, id_low, id_high, post_to_event, task);
 }
 
-int32_t bsp_can_send(can_id_t bus, const can_frame_t *frame)
+int32_t bsp_can_send(can_id_e bus, const can_frame_t *frame)
 {
     if ((unsigned)bus >= CAN_NUM || frame == NULL || frame->len > 8u)
     {
@@ -100,7 +100,7 @@ int32_t bsp_can_send(can_id_t bus, const can_frame_t *frame)
     return ERR_OK;
 }
 
-const bsp_can_stats_t *bsp_can_stats(can_id_t bus)
+const bsp_can_stats_t *bsp_can_stats(can_id_e bus)
 {
     return ((unsigned)bus < CAN_NUM) ? &can_stats[bus] : NULL;
 }
@@ -138,7 +138,7 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t interrupt_f
 
             if (frame.id >= subscription->id_low && frame.id <= subscription->id_high)
             {
-                subscription->callback((can_id_t)bus, &frame, subscription->context);
+                subscription->callback((can_id_e)bus, &frame, subscription->context);
                 routed = true;
             }
         }

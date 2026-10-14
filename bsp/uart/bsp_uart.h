@@ -58,11 +58,11 @@ typedef struct
 extern const bsp_uart_cfg_t board_uart_cfg[UART_NUM];    /* 由 board.c 提供 */
 
 /* 写入发送队列并启动发送，不阻塞；返回实际入队字节数（队列满则少于 len） */
-int32_t  bsp_uart_write(uart_id_t id, const void *data, uint32_t len);
+int32_t  bsp_uart_write(uart_id_e id, const void *data, uint32_t len);
 /* 把这个串口收到的数据块投递给事件任务 task（在中断里拷贝，任务里处理）。
  * 一个数据块 = 一次空闲线 / DMA 半满 / DMA 满事件的数据，长度不超过该串口的接收缓冲；
  * task->max_len 必须不小于该串口的接收缓冲，否则超长的块会被丢弃（task->oversize 计数）。
  * 没有绑定时收到的数据被丢弃，计入 rx_unbound_count。 */
-void     bsp_uart_bind_event(uart_id_t id, struct event_task *task);
-const bsp_uart_state_t *bsp_uart_state(uart_id_t id);    /* 统计计数，调试用 */
+void     bsp_uart_bind_event(uart_id_e id, struct event_task *task);
+const bsp_uart_state_t *bsp_uart_state(uart_id_e id);    /* 统计计数，调试用 */
 #endif

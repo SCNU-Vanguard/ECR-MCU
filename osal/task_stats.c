@@ -1,6 +1,6 @@
 #include "osal/task_stats.h"
 
-#ifdef CONFIG_TASK_STATS
+#ifdef CONFIG_OSAL_TASK_STATS
 #include "osal/osal.h"
 #include CMSIS_device_header            /* DWT、CoreDebug、SystemCoreClock */
 

@@ -182,7 +182,7 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 }
 
 /* ---------------- 对外接口 ---------------- */
-int32_t bsp_uart_write(uart_id_t id, const void *data, uint32_t len)
+int32_t bsp_uart_write(uart_id_e id, const void *data, uint32_t len)
 {
     if ((unsigned)id >= UART_NUM)
     {
@@ -196,7 +196,7 @@ int32_t bsp_uart_write(uart_id_t id, const void *data, uint32_t len)
     return (int32_t)queued_length;
 }
 
-void bsp_uart_bind_event(uart_id_t id, struct event_task *task)
+void bsp_uart_bind_event(uart_id_e id, struct event_task *task)
 {
     if ((unsigned)id < UART_NUM)
     {
@@ -204,7 +204,7 @@ void bsp_uart_bind_event(uart_id_t id, struct event_task *task)
     }
 }
 
-const bsp_uart_state_t *bsp_uart_state(uart_id_t id)
+const bsp_uart_state_t *bsp_uart_state(uart_id_e id)
 {
     return ((unsigned)id < UART_NUM) ? &uart_states[id] : NULL;
 }

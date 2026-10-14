@@ -27,7 +27,7 @@ struct task_stats
     uint32_t base[5];                        /* 上次 dump 时的累计计数，用来求窗口内的增量 */
 };
 
-#ifdef CONFIG_TASK_STATS
+#ifdef CONFIG_OSAL_TASK_STATS
 void     task_stats_hw_init(void);                                       /* 打开 DWT 周期计数器，framework_init 调用 */
 uint32_t task_stats_now(void);                                           /* 读周期计数器 */
 uint32_t task_stats_cycles_per_us(void);                                 /* 每微秒多少个周期 */

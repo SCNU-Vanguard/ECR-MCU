@@ -133,7 +133,7 @@ SECTIONS
     __stop_event_tasks = .;
   } >FLASH
 
-  /* letter-shell 的命令表：SHELL_EXPORT_CMD 把命令放进名为 shellCommand 的段（CONFIG_SHELL=n 时为空） */
+  /* letter-shell 的命令表：SHELL_EXPORT_CMD 把命令放进名为 shellCommand 的段（CONFIG_COMPONENT_SHELL=n 时为空） */
   .shellCommand : ALIGN(4)
   {
     _shell_command_start = .;
