@@ -7,9 +7,9 @@
  *   - 每次 DRDY 在中断里记录时间戳，并启动一次 SPI DMA 读取（陀螺仪优先，其次加速度计，温度约 4 Hz 一次），整个过程中断里完成，不占任务时间
  *   - 每读完一帧陀螺仪数据，就把"这帧陀螺仪 + 最近一帧加速度计"交给回调（在中断里调用，通常用 event_post_isr 转给任务）
  * 采样率：陀螺仪 1000 Hz（解算频率，每个陀螺仪样本出一帧），加速度计 800 Hz（只用来校正，用最近一帧）。量程固定：加速度计 ±6 g，陀螺仪 ±2000 dps */
-#define BMI088_RATE_HZ                  1000u       /* 陀螺仪 ODR，也是帧率 */
+#define BMI088_RATE_HZ                  1600u       /* 陀螺仪 ODR，也是帧率 */
 #define BMI088_SAMPLE_PERIOD_US         (1000000u / BMI088_RATE_HZ)
-#define BMI088_ACCEL_RATE_HZ            800u
+#define BMI088_ACCEL_RATE_HZ            2000u
 #define BMI088_ACCEL_SAMPLE_PERIOD_US   (1000000u / BMI088_ACCEL_RATE_HZ)
 
 /* 一帧原始数据（LSB），时间戳是 DRDY 中断里取的 bsp_tick_us 低 32 位（约 71 分钟回绕，做差即可） */
@@ -57,6 +57,7 @@ typedef struct
 typedef void (*bmi088_frame_callback_t)(const bmi088_frame_t *frame, void *context);
 
 bool    bmi088_present(void);                                       /* 初始化时两颗芯片 ID 都对、寄存器回读一致才为 true */
+void    bmi088_get_calibration(bmi088_calibration_t *calibration);   /* 当前生效的标定（来自 bmi088_config.h） */
 void    bmi088_convert(const bmi088_frame_t *frame, bmi088_sample_t *sample);
 void    bmi088_set_frame_callback(bmi088_frame_callback_t callback, void *context);     /* 回调在中断里调用 */
 int32_t bmi088_start(void);                                         /* 开始采集：登记中断并补读一次，清掉 DRDY 线 */

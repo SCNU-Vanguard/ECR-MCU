@@ -12,11 +12,13 @@
  * 命令在 shell_task 事件任务里执行，不要长时间阻塞；输出用 shell_out()，不要用 LOGx。 */
 #include "shell.h"
 
+/* 注册成 main 形式（SHELL_TYPE_CMD_MAIN）：函数收到 argc/argv，参数按字符串原样传入。
+ * 不能用 FUNC 形式：它会把每个参数当数字/变量解析后按位置传参，argc/argv 签名会收到错位的值 */
 /* SHELL_EXPORT_CMD 里会把 int(*)(int,char**) 强转成 int(*)()，GCC 会报 -Wcast-function-type，这里局部屏蔽 */
 #define SHELL_CMD(_name, _func, _desc)                                                  \
     _Pragma("GCC diagnostic push")                                                      \
     _Pragma("GCC diagnostic ignored \"-Wcast-function-type\"")                          \
-    SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),     \
+    SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_MAIN),     \
                      _name, _func, _desc);                                              \
     _Pragma("GCC diagnostic pop")
 

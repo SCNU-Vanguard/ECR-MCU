@@ -5,6 +5,7 @@
  * shell：ins_info 看姿态和统计，ins_imu 看最近一帧物理量。 */
 #include <string.h>
 #include "osal/event.h"
+#include "osal/osal.h"
 #include "component/common/initcall.h"
 #include "component/common/err.h"
 #include "component/log/log.h"
@@ -38,6 +39,71 @@ static volatile uint32_t publish_version;                  /* 奇数 = 正在写
 static bool have_previous_frame;
 static uint32_t previous_gyro_timestamp_us;
 static uint32_t previous_gyro_sequence;
+
+/* ---- 陀螺零偏标定：静止采集 INS_CALI_DURATION_S 秒，在本任务里累加（和姿态解算共用同一帧数据）----
+ * 新零偏 = 当前表里的零偏 + 采集期间"已扣除当前零偏的角速度"的平均值。
+ * 只有陀螺零偏能靠静止一次标出来；加速度计 scale/offset 需要多个姿态，这里原样保留。 */
+#define INS_CALI_DURATION_S         60u
+#define INS_CALI_FRAME_TARGET       (INS_CALI_DURATION_S * BMI088_RATE_HZ)
+#define INS_CALI_MOVING_LIMIT_RAD_S 0.1f           /* 任一轴峰峰值超过它，认为采集期间动过 */
+
+typedef enum
+{
+    INS_CALI_IDLE = 0,
+    INS_CALI_RUNNING,
+    INS_CALI_DONE
+} ins_cali_state_e;
+
+typedef struct
+{
+    volatile ins_cali_state_e state;
+    uint32_t frame_count;
+    double   gyro_sum[3];
+    double   temperature_sum;
+    float    gyro_min[3];
+    float    gyro_max[3];
+} ins_cali_t;
+
+static ins_cali_t cali;
+
+static void calibration_start(void)
+{
+    memset(&cali, 0, sizeof cali);
+    for (int axis = 0; axis < 3; axis++)
+    {
+        cali.gyro_min[axis] = 1.0e9f;
+        cali.gyro_max[axis] = -1.0e9f;
+    }
+    cali.state = INS_CALI_RUNNING;                          /* 最后置状态，ins_task 看到 RUNNING 时数据已清零 */
+}
+
+static void calibration_feed(const bmi088_sample_t *sample)
+{
+    if (cali.state != INS_CALI_RUNNING)
+    {
+        return;
+    }
+    for (int axis = 0; axis < 3; axis++)
+    {
+        float value = sample->gyro_rad_s[axis];
+
+        cali.gyro_sum[axis] += (double)value;
+        if (value < cali.gyro_min[axis])
+        {
+            cali.gyro_min[axis] = value;
+        }
+        if (value > cali.gyro_max[axis])
+        {
+            cali.gyro_max[axis] = value;
+        }
+    }
+    cali.temperature_sum += (double)sample->temperature_c;
+    cali.frame_count++;
+    if (cali.frame_count >= INS_CALI_FRAME_TARGET)
+    {
+        cali.state = INS_CALI_DONE;
+    }
+}
 
 static void publish_attitude(const bmi088_sample_t *sample)
 {
@@ -109,6 +175,7 @@ static void ins_run(void *argument, const uint8_t *data, uint16_t length)
     ins_stats.last_dt_s = dt_s;
 
     bmi088_convert(&frame, &last_sample);
+    calibration_feed(&last_sample);
     memcpy(ahrs_sample.gyro_rad_s, last_sample.gyro_rad_s, sizeof ahrs_sample.gyro_rad_s);
     memcpy(ahrs_sample.accel_m_s2, last_sample.accel_m_s2, sizeof ahrs_sample.accel_m_s2);
     ahrs_sample.dt_s = dt_s;
@@ -220,6 +287,107 @@ static int shell_ins_info(int argc, char *argv[])
     return 0;
 }
 SHELL_CMD(ins_info, shell_ins_info, show_attitude_and_statistics)
+
+/* 小数按固定 10 位打印（标定表需要这个精度，C 库没开浮点 printf） */
+static void format_decimal10(char *text, size_t size, double value)
+{
+    int64_t scaled = (int64_t)(value * 1.0e10 + (value >= 0.0 ? 0.5 : -0.5));
+    const char *sign = (scaled < 0) ? "-" : "";
+
+    if (scaled < 0)
+    {
+        scaled = -scaled;
+    }
+    /* long 只有 32 位，10 位小数的整数（最大 1e10 量级）放不下，拆成两段 5 位打印 */
+    uint32_t integer_part = (uint32_t)(scaled / 10000000000LL);
+    uint32_t fraction = (uint32_t)(scaled % 10000000000LL / 100000LL);
+    uint32_t fraction_low = (uint32_t)(scaled % 100000LL);
+
+    snprintf(text, size, "%s%lu.%05lu%05lu", sign, (unsigned long)integer_part, (unsigned long)fraction, (unsigned long)fraction_low);
+}
+
+/* ins_cali：开始静止采集 INS_CALI_DURATION_S 秒（命令会一直等到采完），然后给出标定表。采集期间板子必须静止，最好等加热到恒温之后。
+ * 命令在 shell 任务里阻塞，期间其他 shell 命令不可用；3 秒收不到 IMU 新帧就放弃 */
+static int shell_ins_cali(int argc, char *argv[])
+{
+    bmi088_calibration_t current;
+    uint32_t last_frame_count = 0u;
+    uint32_t stalled_seconds = 0u;
+
+    (void)argc;
+    (void)argv;
+    if (!bmi088_present())
+    {
+        shell_out("imu not present\r\n");
+        return -1;
+    }
+    calibration_start();
+    shell_out("calibration started: keep the board still for %u s\r\n", (unsigned)INS_CALI_DURATION_S);
+    for (uint32_t second = 1u; cali.state == INS_CALI_RUNNING; second++)
+    {
+        os_delay_ms(1000u);
+        if (cali.frame_count == last_frame_count)
+        {
+            stalled_seconds++;
+            if (stalled_seconds >= 3u)
+            {
+                cali.state = INS_CALI_IDLE;
+                shell_out("no imu frames for 3 s (frames=%lu), calibration aborted\r\n", (unsigned long)cali.frame_count);
+                return -1;
+            }
+        }
+        else
+        {
+            stalled_seconds = 0u;
+        }
+        last_frame_count = cali.frame_count;
+        if (second % 10u == 0u)
+        {
+            shell_out("  %lu / %lu frames\r\n", (unsigned long)cali.frame_count, (unsigned long)INS_CALI_FRAME_TARGET);
+        }
+    }
+    char text[32];
+    char accel_scale_text[32];
+    char accel_offset_text[32];
+    char gyro_offset_text[32];
+    static const char axis_names[3] = { 'X', 'Y', 'Z' };
+    bool moved = false;
+
+    bmi088_get_calibration(&current);
+    for (int axis = 0; axis < 3; axis++)
+    {
+        if (cali.gyro_max[axis] - cali.gyro_min[axis] > INS_CALI_MOVING_LIMIT_RAD_S)
+        {
+            moved = true;
+        }
+    }
+    format_decimal10(text, sizeof text, cali.temperature_sum / (double)cali.frame_count);
+    shell_out("calibration done: %lu frames, mean temperature %s C\r\n", (unsigned long)cali.frame_count, text);
+    for (int axis = 0; axis < 3; axis++)
+    {
+        format_decimal10(text, sizeof text, cali.gyro_sum[axis] / (double)cali.frame_count);
+        shell_out("  gyro_%c residual mean = %s rad/s", axis_names[axis], text);
+        format_decimal10(text, sizeof text, (double)(cali.gyro_max[axis] - cali.gyro_min[axis]));
+        shell_out(", peak-to-peak = %s rad/s\r\n", text);
+    }
+    if (moved)
+    {
+        shell_out("WARNING: gyro moved during sampling (peak-to-peak > 0.1 rad/s), result is not reliable, run ins_cali again\r\n");
+    }
+    shell_out("#define BMI088_CALIBRATION_TABLE(X)\r\n");
+    for (int axis = 0; axis < 3; axis++)
+    {
+        double new_offset = (double)current.gyro_offset_rad_s[axis] + cali.gyro_sum[axis] / (double)cali.frame_count;
+
+        format_decimal10(accel_scale_text, sizeof accel_scale_text, (double)current.accel_scale[axis]);
+        format_decimal10(accel_offset_text, sizeof accel_offset_text, (double)current.accel_offset[axis]);
+        format_decimal10(gyro_offset_text, sizeof gyro_offset_text, new_offset);
+        shell_out("    X(%sf, %sf, %sf)%s\r\n", accel_scale_text, accel_offset_text, gyro_offset_text, (axis < 2) ? " \\" : "");
+    }
+    shell_out("(accel scale/offset are kept from the current table; only the gyro offset is calibrated)\r\n");
+    return moved ? -1 : 0;
+}
+SHELL_CMD(ins_cali, shell_ins_cali, calibrate_gyro_offset_and_print_table)
 
 static int shell_ins_imu(int argc, char *argv[])
 {

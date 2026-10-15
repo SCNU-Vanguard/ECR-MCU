@@ -264,6 +264,11 @@ bool bmi088_present(void)
     return imu_present;
 }
 
+void bmi088_get_calibration(bmi088_calibration_t *out)
+{
+    *out = calibration;
+}
+
 void bmi088_convert(const bmi088_frame_t *frame, bmi088_sample_t *sample)
 {
     sample->gyro_clipped = false;
