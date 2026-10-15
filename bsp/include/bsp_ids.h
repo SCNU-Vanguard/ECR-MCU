@@ -39,6 +39,8 @@ typedef enum
 {
     GPIO_ACCEL_CS,
     GPIO_GYRO_CS,
+    GPIO_ACCEL_INT,     /* BMI088 加速度计数据就绪（DRDY）中断脚 */
+    GPIO_GYRO_INT,      /* BMI088 陀螺仪数据就绪（DRDY）中断脚   */
     GPIO_NUM
 } gpio_id_e;
 #endif

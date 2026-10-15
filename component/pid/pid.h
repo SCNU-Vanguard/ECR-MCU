@@ -36,6 +36,8 @@ void  pid_clear(pid_controller_t *pid);                              /* 清零�
 
 /* 角度位置式：积分累加；目标和误差都回绕到 [-pi, pi]，所以只能用于单圈角度（rad），不能拿来算电流、速度这类线性量 */
 float pid_angle_compute(pid_controller_t *pid, float measure, float target);
+/* 线性位置式：P + 累计 I（限幅）+ 误差差分 D，输出限幅；用于温度这类线性量。ki、kd 已按固定调用周期整定，内部不乘除 dt。\r\n * 死区内输出清零，积分保留 */
+float pid_position_compute(pid_controller_t *pid, float measure, float target);
 /* 增量式：每次输出 = 上次输出 + 增量（速度环用） */
 float pid_increment_compute(pid_controller_t *pid, float measure, float target);
 

@@ -67,6 +67,18 @@ typedef struct
 } os_mutex_t;
 
 bool    os_in_isr(void);
+/* CPU 占用统计：在空闲钩子里调用。统计原理见 osal/freertos/cpu_usage.c；CONFIG_OSAL_CPU_USAGE 没开时是空操作 */
+#ifdef CONFIG_OSAL_CPU_USAGE
+void    os_idle_hook(void);
+#else
+#define os_idle_hook()  ((void)0)
+#endif
+/* OS 检测到任务栈溢出时由后端的钩子调用，不返回：记下任务名，有调试器就停在断点，否则复位。
+ * 不能打日志（此时 OS 数据结构已不可信），任务名留在 os_overflow_task_name 里供调试器查看 */
+extern volatile char os_overflow_task_name[16];
+void    os_stack_overflow_handler(const char *task_name) __attribute__((noreturn));
+/* OS 动态堆分配失败时由后端的钩子调用，处理方式同上，任务名位置记为 "heap" */
+void    os_malloc_failed_handler(void) __attribute__((noreturn));
 bool    os_running(void);
 /* 任务/中断都能用的短临界区：屏蔽优先级数值 >= configMAX_SYSCALL_INTERRUPT_PRIORITY 的中断 */
 uint32_t os_irq_save(void);

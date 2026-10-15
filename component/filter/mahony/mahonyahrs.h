@@ -1,0 +1,36 @@
+//=====================================================================================================
+// mahonyahrs.h
+//=====================================================================================================
+//
+// Madgwick's implementation of Mayhony's AHRS algorithm.
+// See: http://www.x-io.co.uk/node/8#open_source_ahrs_and_imu_algorithms
+//
+// Date			Author			Notes
+// 29/09/2011	SOH Madgwick    Initial release
+// 02/10/2011	SOH Madgwick	Optimised for reduced CPU load
+//
+//=====================================================================================================
+#ifndef MahonyAHRS_h
+#define MahonyAHRS_h
+
+//----------------------------------------------------------------------------------------------------
+// Variable declaration
+
+extern volatile float twoKp;			// 2 * proportional gain (Kp)
+extern volatile float twoKi;			// 2 * integral gain (Ki)
+extern volatile float maho_q0, maho_q1, maho_q2, maho_q3;	// quaternion of sensor frame relative to auxiliary frame
+
+//---------------------------------------------------------------------------------------------------
+// Function declarations
+
+/* 此版本使用全局四元数和积分反馈，仅能由一个任务串行处理一条数据流。
+ * 固定采样频率 1000 Hz（在 .c 内定义）；gyro 为 rad/s，加速度和磁场会归一化。
+ * 输入须有限，零加速度会跳过反馈校正；IMU 版本无绝对航向约束。 */
+
+void MahonyAHRSupdate(float gx, float gy, float gz, float ax, float ay, float az, float mx, float my, float mz);
+void MahonyAHRSupdateIMU(float gx, float gy, float gz, float ax, float ay, float az);
+
+#endif
+//=====================================================================================================
+// End of file
+//=====================================================================================================

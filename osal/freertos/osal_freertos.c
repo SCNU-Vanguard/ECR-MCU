@@ -180,3 +180,34 @@ uint32_t os_event_pending_isr(struct event_task *task)
 {
     return (uint32_t)uxQueueMessagesWaitingFromISR((QueueHandle_t)task->os);
 }
+
+volatile char os_overflow_task_name[16];
+
+static void os_fatal_stop(const char *task_name) __attribute__((noreturn));
+
+void os_stack_overflow_handler(const char *task_name)
+{
+    os_fatal_stop(task_name);
+}
+
+void os_malloc_failed_handler(void)
+{
+    os_fatal_stop("heap");
+}
+
+static void os_fatal_stop(const char *task_name)
+{
+    __disable_irq();
+    for (unsigned name_index = 0u; name_index < sizeof os_overflow_task_name - 1u && task_name != NULL && task_name[name_index] != '\0'; name_index++)
+    {
+        os_overflow_task_name[name_index] = task_name[name_index];
+    }
+    if ((CoreDebug->DHCSR & CoreDebug_DHCSR_C_DEBUGEN_Msk) != 0u)
+    {
+        __BKPT(0);                                          /* ���ŵ�����ʱͣ������� os_overflow_task_name */
+    }
+    NVIC_SystemReset();
+    for (;;)
+    {
+    }
+}

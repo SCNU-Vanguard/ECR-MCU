@@ -17,6 +17,8 @@ int32_t bsp_pwm_start(pwm_id_e id);
 int32_t bsp_pwm_stop(pwm_id_e id);
 /* 占空比 0..1000（千分比），按当前 ARR 换算 CCR */
 int32_t bsp_pwm_set_duty(pwm_id_e id, uint32_t permille);
+/* 占空比 0..1000000（百万分比），给需要细分辨率的场合（加热片只用 1% 左右的占空比） */
+int32_t bsp_pwm_set_duty_ppm(pwm_id_e id, uint32_t ppm);
 /* 改频率：保持 PSC 不变，只改 ARR，并按原占空比重算 CCR。适用于蜂鸣器变音调 */
 int32_t bsp_pwm_set_freq(pwm_id_e id, uint32_t hz);
 #endif

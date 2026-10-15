@@ -46,6 +46,24 @@ int32_t bsp_pwm_set_duty(pwm_id_e id, uint32_t permille)
     return ERR_OK;
 }
 
+int32_t bsp_pwm_set_duty_ppm(pwm_id_e id, uint32_t ppm)
+{
+    const bsp_pwm_cfg_t *config = pwm_config(id);
+
+    if (config == NULL)
+    {
+        return ERR_INVAL;
+    }
+    if (ppm > 1000000u)
+    {
+        ppm = 1000000u;
+    }
+    uint32_t auto_reload = __HAL_TIM_GET_AUTORELOAD(config->htim);
+
+    __HAL_TIM_SET_COMPARE(config->htim, config->channel, (uint32_t)(((uint64_t)(auto_reload + 1u) * ppm) / 1000000u));
+    return ERR_OK;
+}
+
 int32_t bsp_pwm_set_freq(pwm_id_e id, uint32_t hz)
 {
     const bsp_pwm_cfg_t *config = pwm_config(id);

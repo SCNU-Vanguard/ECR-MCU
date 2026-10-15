@@ -26,6 +26,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "component/common/framework.h"
+#include "osal/osal.h"
 
 /* USER CODE END Includes */
 
@@ -71,6 +72,44 @@ void StartDefaultTask(void *argument);
 
 extern void MX_USB_DEVICE_Init(void);
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
+
+/* Hook prototypes */
+void vApplicationIdleHook(void);
+void vApplicationTickHook(void);
+void vApplicationStackOverflowHook(xTaskHandle xTask, signed char *pcTaskName);
+void vApplicationMallocFailedHook(void);
+
+/* USER CODE BEGIN 2 */
+void vApplicationIdleHook( void )
+{
+  /* 每次空闲任务循环调用，不能阻塞、不能调用带等待的 OS 接口。这里只做 CPU 占用统计（看门狗喂狗放在控制任务里，不放这里） */
+  os_idle_hook();
+}
+/* USER CODE END 2 */
+
+/* USER CODE BEGIN 3 */
+void vApplicationTickHook( void )
+{
+  /* 每个 FreeRTOS tick 在中断里调用，只能用 FromISR 接口。周期任务的节拍由 HAL 时基 TIM7 驱动（bsp_tick.c），这里不需要做事 */
+}
+/* USER CODE END 3 */
+
+/* USER CODE BEGIN 4 */
+void vApplicationStackOverflowHook(xTaskHandle xTask, signed char *pcTaskName)
+{
+  /* configCHECK_FOR_STACK_OVERFLOW = 2 时，检测到栈溢出会调用这里；处理逻辑在 OS 抽象层 */
+  (void)xTask;
+  os_stack_overflow_handler((const char *)pcTaskName);
+}
+/* USER CODE END 4 */
+
+/* USER CODE BEGIN 5 */
+void vApplicationMallocFailedHook(void)
+{
+  /* pvPortMalloc 失败（FreeRTOS 动态堆 configTOTAL_HEAP_SIZE 用完）时调用；框架的任务和队列都是静态分配，走到这里说明有人用了动态创建 */
+  os_malloc_failed_handler();
+}
+/* USER CODE END 5 */
 
 /**
   * @brief  FreeRTOS initialization

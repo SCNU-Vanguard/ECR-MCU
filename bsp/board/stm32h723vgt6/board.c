@@ -3,6 +3,8 @@
  * 每一段都由对应的 CONFIG_BSP_XXX 控制：配置里关掉的外设抽象，这里不引用它的头文件和句柄。
  * 所有配置表都是"一行一个元素"，第一行注释标明每一列的含义。 */
 #include "main.h"          /* ACCEL_CS_Pin 等引脚宏 */
+#include "component/common/initcall.h"
+#include "component/common/err.h"
 
 /* ---- UART：缓冲大小按各自数据量定（队列必须是 2 的幂） ---- */
 #ifdef CONFIG_BSP_UART
@@ -52,6 +54,15 @@ const bsp_spi_cfg_t board_spi_cfg[SPI_NUM] =
     [SPI_IMU] = { &hspi2, true  },
     [SPI_LED] = { &hspi6, false },
 };
+
+/* SPI2 的 MISO 是 PC2_C：H7 的 PC2_C 引脚内部有模拟开关，复位后断开，要闭合才能当数字 IO 用。
+ * CubeMX 只生成了 PC3 的闭合（片选 PC3_C），PC2 要自己补；重复闭合无副作用。BMI088 初始化在 CDD 阶段，晚于这里 */
+static int32_t board_spi_pins_init(void)
+{
+    HAL_SYSCFG_AnalogSwitchConfig(SYSCFG_SWITCH_PC2, SYSCFG_SWITCH_PC2_CLOSE);
+    return ERR_OK;
+}
+INIT_BSP_STAGE1(board_spi_pins_init);
 #endif
 
 /* ---- PWM ---- */
@@ -76,5 +87,7 @@ const bsp_pin_t board_pins[GPIO_NUM] =
     /* 逻辑引脚             端口,               引脚号 */
     [GPIO_ACCEL_CS] = { ACCEL_CS_GPIO_Port, ACCEL_CS_Pin },
     [GPIO_GYRO_CS]  = { GYRO_CS_GPIO_Port,  GYRO_CS_Pin  },
+    [GPIO_ACCEL_INT] = { ACCEL_INT_GPIO_Port, ACCEL_INT_Pin },      /* PE10，EXTI15_10 */
+    [GPIO_GYRO_INT]  = { GYRO_INT_GPIO_Port,  GYRO_INT_Pin  },      /* PE12，EXTI15_10 */
 };
 #endif

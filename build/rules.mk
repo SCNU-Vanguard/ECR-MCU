@@ -14,9 +14,9 @@ COMMA := ,
 LD_NOWARN_RWX := $(if $(filter-out 0,$(shell $(PREFIX)ld --help 2>/dev/null | grep -c no-warn-rwx-segments)),-Wl$(COMMA)--no-warn-rwx-segments)
 
 INCS   := -I. $(addprefix -I,$(PLATFORM_INC) $(MODULE_INC))
-CFLAGS := $(CPU_FLAGS) $(MCU_DEFS) $(CFG_DEFS) $(COMMON_CFLAGS) $(OPT) $(INCS)
+CFLAGS := $(CPU_FLAGS) $(MCU_DEFS) $(MODULE_DEFS) $(CFG_DEFS) $(COMMON_CFLAGS) $(OPT) $(INCS)
 LDFLAGS := $(CPU_FLAGS) -specs=nano.specs -T$(LDSCRIPT) -Wl,--gc-sections \
-           -Wl,-Map=$(OUT)/$(NAME).map,--cref -Wl,--print-memory-usage $(LD_NOWARN_RWX) -lc -lm -lnosys
+           -Wl,-Map=$(OUT)/$(NAME).map,--cref -Wl,--print-memory-usage $(LD_NOWARN_RWX) -Wl,--no-wchar-size-warning -Wl,-z,noexecstack $(MODULE_LIBS) -lc -lm -lnosys
 
 .PHONY: all clean
 all: $(OUT)/$(NAME).elf $(OUT)/$(NAME).bin $(OUT)/$(NAME).hex
@@ -33,7 +33,10 @@ FORCE:
 $(OBJ)/platform/%.o: CFLAGS += -Wno-missing-field-initializers
 # 第三方库源码不改，不为它们的警告改代码
 $(OBJ)/component/shell/letter-shell/%.o: CFLAGS += -Wno-cast-function-type -Wno-sign-compare
-$(OBJ)/component/log/easylogger/%.o: CFLAGS += -Wno-sign-compare -Wno-unused-parameter
+$(OBJ)/component/log/easylogger/%.o: CFLAGS += -Wno-sign-compare -Wno-unused-parameter -Wno-array-bounds
+# 同学的滤波算法和数学库（component/filter、component/mathlib）按原样移植，不为它们的警告改代码。
+$(OBJ)/component/filter/%.o: CFLAGS += -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable -Wno-sign-compare -Wno-missing-field-initializers -Wno-implicit-fallthrough -Wno-maybe-uninitialized
+$(OBJ)/component/mathlib/%.o: CFLAGS += -Wno-unused-parameter -Wno-unused-variable -Wno-sign-compare
 $(OBJ)/%.o: %.c $(STAMP)
 	@mkdir -p $(dir $@)
 	@echo "CC  $<"
