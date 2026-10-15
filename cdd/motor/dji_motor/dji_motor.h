@@ -41,20 +41,24 @@ typedef struct
     int16_t  current;                    /* 反馈的实际电流/转矩原始值（未应用 reverse） */
 } dji_motor_t;
 
-/* 在 INIT_APP 阶段之前/之内调用。参数非法返回 ERR_INVAL，id/总线冲突返回 ERR_BUSY，
+/* 在 INIT_APP_STAGE1 里调用（或更早）。参数非法返回 ERR_INVAL，id/总线冲突返回 ERR_BUSY，
  * 数量超限返回 ERR_NOMEM，CAN 订阅失败返回对应错误码 */
 int32_t dji_motor_register(dji_motor_t *motor, const dji_motor_config_t *config);
 
 /* 直接给原始值（电流/电压），绕过软件控制。已处理 reverse 以外的一切由调用者负责；仅对 control == NULL 的电机生效 */
 void    dji_motor_set_cmd(dji_motor_t *motor, int16_t cmd);
 
-/* 对所有已注册、有控制配置的 DJI 电机计算 cmd：
+/* 计算：把目标按控制模式算成 output（转矩给定，用户方向），active = false 则 output = cmd = 0。
  *   TORQUE：给定 + 转矩前馈   SPEED：速度环 + 转矩前馈   ANGLE：角度环 -> 速度环 + 转矩前馈
- *   然后应用 reverse、按电机型号限幅。active = false 的电机 cmd = 0 */
-void    dji_motor_compute_all(void);
+ * 速度环是增量式，同一个电机一个控制周期内只能计算一次。没有控制配置的电机什么都不做 */
+void    dji_motor_compute(dji_motor_t *motor);
+/* 计算指定总线上所有有控制配置的 DJI 电机，返回计算了几个；总线号非法返回 ERR_INVAL */
+int32_t dji_motor_compute_bus(can_id_e bus);
 
-/* 把所有已注册 DJI 电机的 cmd 按"总线 x 控制帧"打包发出；没有注册任何电机的帧不发。返回发出的帧数 */
-int32_t dji_motor_send_all(void);
+/* 发送：把指定总线上所有 DJI 电机的 output 应用 reverse、按型号限幅后转成 cmd，按"控制帧"打包发出。
+ * 没有电机的帧不发。返回发出的帧数；总线号非法返回 ERR_INVAL。
+ * DJI 的一个控制帧里有 4 个电机槽位，协议上无法只发单个电机，所以只有按总线发送 */
+int32_t dji_motor_send_bus(can_id_e bus);
 
 /* 清零圈数，从下一帧反馈重新累计多圈角度 */
 void    dji_motor_zero(dji_motor_t *motor);

@@ -154,7 +154,7 @@ static void dm_run(void *argument, const uint8_t *message, uint16_t len)
         return;
     }
 }
-EVENT_TASK_DEFINE(dm_task, 0, 384, EVENT_QUEUE, sizeof(can_event_t), 32, 0, dm_run, NULL);
+EVENT_TASK_DEFINE(dm_task, OS_PRIORITY_HIGHEST, OS_STACK_MEDIUM, EVENT_QUEUE, sizeof(can_event_t), 32, 0, dm_run, NULL);
 
 int32_t dm_motor_register(dm_motor_t *motor, const dm_motor_config_t *config)
 {
@@ -302,8 +302,60 @@ static void compute_mit(dm_motor_t *motor)
     }
 }
 
-void dm_motor_compute_all(void)
+void dm_motor_compute(dm_motor_t *motor)
 {
+    motor_t *base = &motor->base;
+    float sign = base->reverse ? -1.0f : 1.0f;
+
+    set_hold(motor);
+    base->output = 0.0f;
+    if (!base->active || !motor_control_ready(base))        /* 没打开输出，或还没收到过反馈：保持帧 */
+    {
+        return;
+    }
+    switch (motor->mode)
+    {
+        case DM_MODE_MIT:
+            compute_mit(motor);
+            break;
+        case DM_MODE_POSITION_SPEED:
+            if (base->control_mode == MOTOR_CONTROL_ANGLE)
+            {
+                motor->cmd_position = angle_target_to_motor(motor);
+                motor->cmd_velocity = motor->speed_limit;
+            }
+            break;
+        case DM_MODE_SPEED:
+            if (base->control_mode == MOTOR_CONTROL_SPEED)
+            {
+                motor->cmd_velocity = sign * (base->target + motor_speed_feedforward(base));
+            }
+            else if (base->control_mode == MOTOR_CONTROL_ANGLE && base->has_control)
+            {
+                float speed_reference = motor_angle_loop(base, base->target) + motor_speed_feedforward(base);
+
+                motor->cmd_velocity = sign * speed_reference;
+            }
+            break;
+        case DM_MODE_FORCE_POSITION:
+            if (base->control_mode == MOTOR_CONTROL_ANGLE)
+            {
+                motor->cmd_position = angle_target_to_motor(motor);
+                motor->cmd_velocity = motor->speed_limit;
+                motor->cmd_current_limit = motor->current_limit;
+            }
+            break;
+    }
+}
+
+int32_t dm_motor_compute_bus(can_id_e bus)
+{
+    int32_t computed_count = 0;
+
+    if ((unsigned)bus >= CAN_NUM)
+    {
+        return ERR_INVAL;
+    }
     for (uint8_t motor_index = 0; ; motor_index++)
     {
         motor_t *base = motor_registry_get(motor_index);
@@ -312,55 +364,15 @@ void dm_motor_compute_all(void)
         {
             break;
         }
-        if (!is_dm_type(base->type))
+        if (!is_dm_type(base->type) || base->bus != bus)
         {
             continue;
         }
-        dm_motor_t *motor = (dm_motor_t *)base;
-        float sign = base->reverse ? -1.0f : 1.0f;
-
-        set_hold(motor);
-        base->output = 0.0f;
-        if (!base->active)
-        {
-            continue;
-        }
-        switch (motor->mode)
-        {
-            case DM_MODE_MIT:
-                compute_mit(motor);
-                break;
-            case DM_MODE_POSITION_SPEED:
-                if (base->control_mode == MOTOR_CONTROL_ANGLE)
-                {
-                    motor->cmd_position = angle_target_to_motor(motor);
-                    motor->cmd_velocity = motor->speed_limit;
-                }
-                break;
-            case DM_MODE_SPEED:
-                if (base->control_mode == MOTOR_CONTROL_SPEED)
-                {
-                    motor->cmd_velocity = sign * (base->target + motor_speed_feedforward(base));
-                }
-                else if (base->control_mode == MOTOR_CONTROL_ANGLE && base->has_control)
-                {
-                    float speed_reference = motor_angle_loop(base, base->target) + motor_speed_feedforward(base);
-
-                    motor->cmd_velocity = sign * speed_reference;
-                }
-                break;
-            case DM_MODE_FORCE_POSITION:
-                if (base->control_mode == MOTOR_CONTROL_ANGLE)
-                {
-                    motor->cmd_position = angle_target_to_motor(motor);
-                    motor->cmd_velocity = motor->speed_limit;
-                    motor->cmd_current_limit = motor->current_limit;
-                }
-                break;
-        }
+        dm_motor_compute((dm_motor_t *)base);
+        computed_count++;
     }
+    return computed_count;
 }
-
 /* ---- 编码并发送 ---- */
 static void put_float_little_endian(uint8_t *destination, float value)
 {
@@ -425,10 +437,26 @@ static void encode_frame(const dm_motor_t *motor, can_frame_t *frame)
     }
 }
 
-int32_t dm_motor_send_all(void)
+int32_t dm_motor_send(dm_motor_t *motor)
+{
+    can_frame_t frame;
+
+    if (motor == NULL)
+    {
+        return ERR_INVAL;
+    }
+    encode_frame(motor, &frame);
+    return bsp_can_send(motor->base.bus, &frame);
+}
+
+int32_t dm_motor_send_bus(can_id_e bus)
 {
     int32_t sent_count = 0;
 
+    if ((unsigned)bus >= CAN_NUM)
+    {
+        return ERR_INVAL;
+    }
     for (uint8_t motor_index = 0; ; motor_index++)
     {
         motor_t *base = motor_registry_get(motor_index);
@@ -437,14 +465,11 @@ int32_t dm_motor_send_all(void)
         {
             break;
         }
-        if (!is_dm_type(base->type))
+        if (!is_dm_type(base->type) || base->bus != bus)
         {
             continue;
         }
-        can_frame_t frame;
-
-        encode_frame((dm_motor_t *)base, &frame);
-        if (bsp_can_send(base->bus, &frame) == ERR_OK)
+        if (dm_motor_send((dm_motor_t *)base) == ERR_OK)
         {
             sent_count++;
         }

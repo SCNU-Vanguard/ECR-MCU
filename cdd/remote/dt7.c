@@ -87,7 +87,7 @@ static void dt7_run(void *argument, const uint8_t *data, uint16_t len)
         current_data.bad_frames++;
     }
 }
-EVENT_TASK_DEFINE(dt7_task, 3, 384, EVENT_LATEST, 36, 1, DT7_TIMEOUT_MS, dt7_run, NULL);
+EVENT_TASK_DEFINE(dt7_task, OS_PRIORITY_HIGH, OS_STACK_MEDIUM, EVENT_LATEST, 36, 1, DT7_TIMEOUT_MS, dt7_run, NULL);
 
 void dt7_get(dt7_data_t *out)
 {
@@ -103,4 +103,4 @@ static int32_t dt7_init(void)
     bsp_uart_bind_event(UART_DBUS, &dt7_task);
     return ERR_OK;
 }
-INIT_CDD(dt7_init);
+INIT_CDD_STAGE1(dt7_init);

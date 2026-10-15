@@ -71,7 +71,7 @@ const char *elog_port_get_t_info(void)
     return "";
 }
 
-/* 初始化：INIT_COMP 级别，在 bsp 的 UART 之后 */
+/* 初始化：INIT_COMP_STAGE1，在 BSP 的 UART（INIT_BSP_STAGE1）之后 */
 static int32_t log_init(void)
 {
     elog_init();                                           /* 内部会调 elog_port_init() */
@@ -83,4 +83,4 @@ static int32_t log_init(void)
     elog_start();
     return ERR_OK;
 }
-INIT_COMP(log_init);
+INIT_COMP_STAGE1(log_init);

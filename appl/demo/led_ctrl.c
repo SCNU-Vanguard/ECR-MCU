@@ -4,8 +4,6 @@
 #include "cdd/led/ws2812/ws2812.h"
 
 #define LED_BRIGHT          32u        /* 亮度 0..255，板载灯很亮，不要开满 */
-#define LED_BLINK_FREQ_HZ   1u
-#define LED_TASK_FREQ_HZ    (LED_BLINK_FREQ_HZ * 2u)
 
 static void led_ctrl_run(void *argument)
 {
@@ -23,5 +21,5 @@ static void led_ctrl_run(void *argument)
     }
     (void)ws2812_refresh();
 }
-/* 任务名 led_ctrl_task，2 Hz，优先级 3（数值小优先级高），栈 256 字 */
-PERIOD_TASK_DEFINE(led_ctrl_task, LED_TASK_FREQ_HZ, 3, 256, led_ctrl_run, NULL);
+/* 任务名 led_ctrl_task，2 Hz（亮灭各一次 = 1 Hz 闪烁），最低优先级，小栈 */
+PERIOD_TASK_DEFINE(led_ctrl_task, OS_FREQ_2HZ, OS_PRIORITY_LOWEST, OS_STACK_SMALL, led_ctrl_run, NULL);

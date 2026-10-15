@@ -102,7 +102,7 @@ static int32_t bmi088_init(void)
     imu_present = true;                                     /* 量程/ODR 保持上电默认，按需再配 */
     return ERR_OK;
 }
-INIT_CDD(bmi088_init);
+INIT_CDD_STAGE1(bmi088_init);
 
 bool bmi088_present(void)
 {

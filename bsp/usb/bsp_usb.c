@@ -73,4 +73,4 @@ static int32_t bsp_usb_init(void)
 {
     return cqueue_init(&tx_queue, tx_queue_mem, sizeof tx_queue_mem, 1u);
 }
-INIT_BSP(bsp_usb_init);
+INIT_BSP_STAGE1(bsp_usb_init);

@@ -11,7 +11,7 @@
  * 使用流程：
  *   1. robot 里按表注册（绑定总线），注册时可以带一份控制配置（PID 参数、外部反馈、前馈）
  *   2. 应用里 motor_set_target() 设目标，motor_set_active(motor, true) 打开输出
- *   3. 周期任务里调用 motor_control_all()：自动按各电机的控制模式计算，并按各厂家的报文格式发到各自绑定的总线 */
+ *   3. 周期任务里按总线调用 motor_compute_bus() 计算、motor_send_bus() 发送：自动按各电机的控制模式计算，并按各厂家的报文格式发到各自绑定的总线（DM 还可以 dm_motor_send 单个电机发送） */
 
 typedef enum
 {
@@ -75,12 +75,13 @@ typedef struct
     float        torque;                   /* 实际转矩：DJI 为反馈的电流原始值，DM 为 N·m */
     float        temperature;              /* 摄氏度（DJI：电机温度；DM：转子温度） */
 
-    /* 控制：由 motor_set_target / motor_set_active 修改，由 motor_control_all 使用 */
+    /* 控制：由 motor_set_target / motor_set_active 修改，由 motor_compute / motor_compute_bus 使用 */
     bool                    has_control;   /* 注册时给了控制配置 */
     bool                    active;        /* false：输出清零/保持，控制器清零 */
+    bool                    hold_pending;  /* motor_set_active(true) 之后置位：第一次拿到有效反馈时，把目标设成当前位置（角度模式）或 0（速度/转矩模式），避免一打开输出就猛冲 */
     motor_control_mode_e    control_mode;
     float                   target;
-    float                   output;        /* 级联计算的结果（转矩给定，用户方向，未应用 reverse）；DM 仅软件转矩模式有意义。钩子可以修改它 */
+    float                   output;        /* 级联计算的结果（转矩给定，用户方向，未应用 reverse）；DM 仅软件转矩模式有意义。计算和发送之间应用层可以修改它（比如功率限制） */
     motor_control_options_t options;
     pid_controller_t        angle_pid;
     pid_controller_t        speed_pid;
@@ -105,8 +106,12 @@ void motor_control_setup(motor_t *motor, const motor_control_config_t *config);
  * 没有控制配置的电机也能设置，但只有硬件自己闭环的模式（DM 的 MIT 原生/位置速度/速度/力位混合）会生效，
  * 需要软件 PID 的组合没有控制配置时 DJI 输出 0，DM 发保持帧 */
 int32_t motor_set_target(motor_t *motor, motor_control_mode_e mode, float target);
-/* 打开/关闭输出。关闭：DJI 发 0，DM 发保持帧；同时清零两个 PID */
+/* 打开/关闭输出。关闭：DJI 发 0，DM 发保持帧；同时清零两个 PID。
+ * 打开：目标会在下一次计算、拿到有效反馈时自动重设为"当前角度"（角度模式）或 0（速度/转矩模式）；
+ * 在这之前（还没收到过反馈）输出为 0，所以上电后可以直接 motor_set_target + motor_set_active(true) */
 void motor_set_active(motor_t *motor, bool active);
+/* 各厂家的 compute 里调用：有了第一次反馈才返回 true；返回 true 时若 hold_pending，先把目标重设为当前状态。返回 false 时该电机本周期输出 0 / 保持 */
+bool motor_control_ready(motor_t *motor);
 
 /* 控制器的两个环，各厂家按自己电机的硬件能力选用（DJI/DM 电机内部已经闭好电流/转矩环，所以软件不做转矩环）：
  *   角度环：目标角度 -> 速度给定（不含前馈）
@@ -117,10 +122,13 @@ float motor_speed_feedforward(const motor_t *motor);
 float motor_torque_feedforward(const motor_t *motor);
 void  motor_pids_clear(motor_t *motor);
 
-/* ---- 一个函数：按各电机的控制模式计算，并按 DJI / DM 各自的报文格式发到各自绑定的总线 ---- */
-/* 返回成功发出的帧数。要求周期调用（DM 的反馈帧是问询式的，只有收到控制帧才会回复）。
- * 计算完、发送前会调用一次已设置的钩子（功率限制等可以挂在这里，通过 motor_registry_get 改各电机的输出） */
-int32_t motor_control_all(void);
-void    motor_set_output_hook(void (*hook)(void));
+/* ---- 按总线计算 / 发送：自动按电机型号分发到 DJI / DM 各自的报文格式 ----
+ * 计算和发送是分开的，调用者自己组合：典型用法是每个控制周期里，对某条总线先 motor_compute_bus，
+ * 需要的话在两步之间读写 motor_t::output（比如功率限制），再 motor_send_bus。
+ * 同一个电机一个控制周期内只能计算一次（速度环是增量式）。
+ * 单个电机：计算用 motor_compute；发送只有 DM 支持（dm_motor_send），DJI 的一个控制帧有 4 个槽位，只能按总线发 */
+int32_t motor_compute(motor_t *motor);              /* 成功 ERR_OK；电机类型未编译进来返回 ERR_INVAL */
+int32_t motor_compute_bus(can_id_e bus);            /* 返回计算了几个电机；总线号非法返回 ERR_INVAL */
+int32_t motor_send_bus(can_id_e bus);               /* 返回发出的帧数；总线号非法返回 ERR_INVAL */
 
 #endif

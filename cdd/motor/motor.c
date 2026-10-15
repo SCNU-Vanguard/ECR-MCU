@@ -97,7 +97,23 @@ void motor_set_active(motor_t *motor, bool active)
     {
         motor_pids_clear(motor);
     }
+    motor->hold_pending = active;
     motor->active = active;
+}
+
+bool motor_control_ready(motor_t *motor)
+{
+    if (!motor->got_first)
+    {
+        return false;
+    }
+    if (motor->hold_pending)
+    {
+        motor->target = (motor->control_mode == MOTOR_CONTROL_ANGLE) ? motor->single_angle_rad : 0.0f;
+        motor_pids_clear(motor);
+        motor->hold_pending = false;
+    }
+    return true;
 }
 
 float motor_angle_loop(motor_t *motor, float angle_target)

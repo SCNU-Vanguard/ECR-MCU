@@ -86,8 +86,21 @@ uint32_t os_task_stack_free(void *task)
 }
 
 /* ---------- 周期任务后端（period.c 要求的四个函数）---------- */
-/* 框架优先级（0 最高）-> FreeRTOS 优先级（数值大最高） */
-#define PERIOD_PRIORITY_MAP(priority)   ((UBaseType_t)(configMAX_PRIORITIES - 1 - (priority)))
+/* 5 档优先级 -> FreeRTOS 优先级（数值大最高）。框架内部编号 0 最高、上限 23，保证任务都高于 CubeIDE 的 defaultTask(24)。
+ * 周期任务和事件任务共用这张表。下标 = os_priority_e */
+static const uint8_t framework_priority_table[] =
+{
+    22,    /* OS_PRIORITY_LOWEST  */
+    16,    /* OS_PRIORITY_LOW     */
+    10,    /* OS_PRIORITY_MEDIUM  */
+    4,     /* OS_PRIORITY_HIGH    */
+    0,     /* OS_PRIORITY_HIGHEST */
+};
+
+static UBaseType_t os_priority_to_freertos(os_priority_e priority)
+{
+    return (UBaseType_t)(configMAX_PRIORITIES - 1 - framework_priority_table[priority]);
+}
 
 int32_t os_period_start(struct period_task *task)
 {
@@ -99,7 +112,7 @@ int32_t os_period_start(struct period_task *task)
     }
     task->os = semaphore;
     TaskHandle_t handle = xTaskCreateStatic(period_entry, task->name, task->stack_words, task,
-                                            PERIOD_PRIORITY_MAP(task->priority),
+                                            os_priority_to_freertos(task->priority),
                                             (StackType_t *)task->os_mem[1], (StaticTask_t *)task->os_mem[0]);
 
     task->os_task = handle;
@@ -140,7 +153,7 @@ int32_t os_event_start(struct event_task *task)
     }
     task->os = queue;
     TaskHandle_t handle = xTaskCreateStatic(event_entry, task->name, task->stack_words, task,
-                                            PERIOD_PRIORITY_MAP(task->priority),
+                                            os_priority_to_freertos(task->priority),
                                             (StackType_t *)task->os_mem[1], (StaticTask_t *)task->os_mem[0]);
 
     task->os_task = handle;

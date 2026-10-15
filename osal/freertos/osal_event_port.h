@@ -14,6 +14,4 @@
         &_name##_queue_ctrl,                                                              \
         _name##_queue_buf,                                                                \
     }
-/* 框架优先级 0..EVENT_PRIORITY_MAX-1（0 最高），与周期任务共用同一套数值 */
-#define EVENT_PRIORITY_MAX      24
 #endif

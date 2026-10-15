@@ -106,7 +106,7 @@ SECTIONS
     . = ALIGN(4);
   } >FLASH
 
-  /* initcall 表：按级别 0..3 顺序拼接；首尾符号供 initcall_run_all() 遍历 */
+  /* initcall 表：按级别 0..7 顺序拼接；首尾符号供 initcall_run_all() 遍历 */
   .init_region : ALIGN(4)
   {
     __start_init_region = .;
@@ -114,6 +114,10 @@ SECTIONS
     KEEP(*(.initcall_1.init))
     KEEP(*(.initcall_2.init))
     KEEP(*(.initcall_3.init))
+    KEEP(*(.initcall_4.init))
+    KEEP(*(.initcall_5.init))
+    KEEP(*(.initcall_6.init))
+    KEEP(*(.initcall_7.init))
     __stop_init_region = .;
   } >FLASH
 

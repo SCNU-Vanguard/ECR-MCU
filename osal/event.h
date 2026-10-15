@@ -26,8 +26,8 @@ struct event_task
     uint32_t    timeout_ms;                  /* 0 = 一直等，不产生超时调用 */
     uint16_t    max_len;                     /* 单条消息数据最大字节数 */
     uint16_t    depth;                       /* 队列深度 */
-    uint16_t    priority;                        /* 0..EVENT_PRIORITY_MAX-1，数值小优先级高 */
-    uint16_t    stack_words;                 /* 栈（字）：要包含 max_len 字节的消息缓冲，再加 fn 自己的需要 */
+    os_priority_e priority;
+    uint16_t    stack_words;                 /* 由 os_stack_e 换算出的字数，只有后端用。栈里要放 max_len 字节的消息缓冲，选档时要算上 */
     uint8_t     mode;                        /* EVENT_QUEUE / EVENT_LATEST */
     volatile uint32_t posted;
     volatile uint32_t handled;
@@ -40,14 +40,17 @@ struct event_task
     struct task_stats stats;                 /* 统计（第 8.6 节） */
 };
 
-/* 定义一个事件任务：编译期检查参数；指针放进 event_tasks 段，不需要任何注册调用 */
-#define EVENT_TASK_DEFINE(_name, _priority, _stack_words, _mode, _max_len, _depth, _timeout_ms, _fn, _argument)  \
-    _Static_assert((_priority) >= 0 && (_priority) < EVENT_PRIORITY_MAX, #_name ": priority out of range");             \
+/* 定义一个事件任务：_priority 填 OS_PRIORITY_xxx，_stack 填 OS_STACK_xxx，编译期检查参数；指针放进 event_tasks 段，不需要任何注册调用 */
+#define EVENT_TASK_DEFINE(_name, _priority, _stack, _mode, _max_len, _depth, _timeout_ms, _fn, _argument)  \
+    _Static_assert((_priority) >= OS_PRIORITY_LOWEST && (_priority) <= OS_PRIORITY_HIGHEST,                  \
+                   #_name ": priority must be an os_priority_e value");                                \
     _Static_assert((_depth) >= 1 && (_max_len) >= 1 && (_max_len) <= 1024, #_name ": bad size");        \
     _Static_assert((_mode) != EVENT_LATEST || (_depth) == 1, #_name ": EVENT_LATEST needs depth 1");    \
-    OS_EVENT_STORAGE(_name, _stack_words, _depth, EVENT_HDR_SIZE + (_max_len))                          \
+    _Static_assert((_stack) >= OS_STACK_SMALL && (_stack) <= OS_STACK_LARGE, \
+                   #_name ": stack must be an os_stack_e value");                                      \
+    OS_EVENT_STORAGE(_name, OS_STACK_WORDS(_stack), _depth, EVENT_HDR_SIZE + (_max_len))                          \
     struct event_task _name = { #_name, (_fn), (_argument), (_timeout_ms), (_max_len), (_depth), (_priority),    \
-                                (_stack_words), (_mode), 0, 0, 0, 0, 0, OS_EVENT_MEM(_name), 0, 0, { 0 } }; \
+                                OS_STACK_WORDS(_stack), (_mode), 0, 0, 0, 0, 0, OS_EVENT_MEM(_name), 0, 0, { 0 } }; \
     static struct event_task *const _name##_reg                                                         \
         __attribute__((section("event_tasks"), used)) = &_name
 

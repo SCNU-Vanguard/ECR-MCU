@@ -20,7 +20,9 @@
  *       X(motor_c, CAN_BUS1, MOTOR_TYPE_GM6020, 5, false, 0, 50, DJI_GM6020_VOLTAGE, &steer_control)
  * 控制配置（motor_control_config_t）由使用者在别处定义成全局 const 变量，表里只引用它的地址。
  */
-#define ROBOT_DJI_MOTOR_TABLE(X)
+#define ROBOT_DJI_MOTOR_TABLE(X)                                                                                              \
+    X(shoot_motor,   CAN_BUS0, MOTOR_TYPE_M3508, 1, false, 0, 50, DJI_GM6020_VOLTAGE, &shoot_motor_control)                  \
+    X(chassis_motor, CAN_BUS1, MOTOR_TYPE_GM6020, 1, false, 0, 50, DJI_GM6020_VOLTAGE, &chassis_motor_control)
 
 /* ---- DM 电机（DM4310 / DM8009P）----
  * 列含义：
@@ -30,7 +32,8 @@
  *   #define ROBOT_DM_MOTOR_TABLE(X)                                                                                                                     \
  *       X(motor_d, CAN_BUS1, MOTOR_TYPE_DM4310, 1, 0x11, DM_MODE_MIT, false, 12.5f, 30.0f, 10.0f, 100, DM_MIT_SOFTWARE_TORQUE, 0.0f, 0.0f, 0.0f, 0.0f, &gimbal_control)
  */
-#define ROBOT_DM_MOTOR_TABLE(X)
+#define ROBOT_DM_MOTOR_TABLE(X)                                                                                                                                            \
+    X(gimbal_motor, CAN_BUS2, MOTOR_TYPE_DM4310, 1, 0x11, DM_MODE_MIT, false, 3.1415927f, 10.0f, 10.0f, 100, DM_MIT_SOFTWARE_TORQUE, 0.0f, 0.0f, 0.0f, 0.0f, &gimbal_motor_control)
 
 #ifdef CONFIG_CDD_MOTOR_DJI_MOTOR
 #include "cdd/motor/dji_motor/dji_motor.h"

@@ -20,12 +20,15 @@ typedef enum
 /* MIT 模式下怎么用（其它三种模式忽略）：
  *   NATIVE：          用电机内部的 Kp/Kd 闭环——ANGLE 发 p_des + Kp/Kd；SPEED 发 v_des + Kd；TORQUE 只发 t_ff
  *   SOFTWARE_TORQUE： Kp=Kd=0，只发 t_ff；位置/速度闭环由软件级联 PID（motor_angle_loop/speed_loop）完成，
- *                     输出转矩 N·m，经过 motor_t::output（钩子可修改），需要有控制配置 */
+ *                     输出转矩 N·m，经过 motor_t::output（发送前应用层可修改），需要有控制配置 */
 typedef enum
 {
     DM_MIT_NATIVE,
     DM_MIT_SOFTWARE_TORQUE,
 } dm_mit_style_e;
+
+/* 状态码：反馈帧里的 state，0 = 失能，1 = 使能，其余都是故障码 */
+#define DM_STATE_ENABLED    1u
 
 /* 注册配置：type 只能是 MOTOR_TYPE_DM4310 / MOTOR_TYPE_DM8009P。
  * p_max / v_max / t_max 必须和电机里设置的映射范围一致，否则反馈和 MIT 控制帧会解码/编码错（默认 12.5 / 30 / 10） */
@@ -63,14 +66,14 @@ typedef struct
     float          kd;
     float          speed_limit;
     float          current_limit;
-    /* 待发送的控制量（电机方向，已处理 reverse）：由 dm_motor_compute_all 计算，dm_motor_send_all 按模式编码发出 */
+    /* 待发送的控制量（电机方向，已处理 reverse）：由 dm_motor_compute 计算，dm_motor_send 按模式编码发出 */
     float          cmd_position;
     float          cmd_velocity;
     float          cmd_kp;
     float          cmd_kd;
     float          cmd_torque;
     float          cmd_current_limit;
-    bool           cmd_from_output;  /* true：cmd_torque 在发送时取自 base.output（软件转矩，钩子可改） */
+    bool           cmd_from_output;  /* true：cmd_torque 在发送时取自 base.output（软件转矩，发送前应用层可改） */
     /* 反馈：在事件任务 dm_task 里更新（中断只拷贝帧） */
     uint8_t        state;            /* 电机状态码：0 失能 1 使能 8 超压 9 欠压 A 过流 B MOS过温 C 线圈过温 D 通信丢失 E 过载 */
     float          position;         /* 当前位置，rad，电机输出轴上电后限定在 ±pi（未应用 reverse） */
@@ -81,7 +84,7 @@ typedef struct
     float          mos_temperature;  /* MOS 管温度，摄氏度 */
 } dm_motor_t;
 
-/* 在 INIT_APP 阶段之前/之内调用，只做绑定（订阅 master_id 的反馈帧），不发送任何帧。
+/* 在 INIT_APP_STAGE1 里调用（或更早），只做绑定（订阅 master_id 的反馈帧），不发送任何帧。
  * 参数非法返回 ERR_INVAL，master_id/总线冲突返回 ERR_BUSY，数量超限返回 ERR_NOMEM */
 int32_t dm_motor_register(dm_motor_t *motor, const dm_motor_config_t *config);
 
@@ -91,15 +94,19 @@ int32_t dm_motor_disable(dm_motor_t *motor);         /* 失能 */
 int32_t dm_motor_set_zero(dm_motor_t *motor);        /* 把当前位置设为零点 */
 int32_t dm_motor_clear_error(dm_motor_t *motor);     /* 清除故障（如过热） */
 
-/* 对所有已注册 DM 电机按"硬件模式 x 控制模式"计算待发送的控制量：
+/* 计算：按"硬件模式 x 控制模式"算出待发送的控制量（cmd_xxx）：
  *   MIT NATIVE     TORQUE/SPEED/ANGLE -> t_ff / v_des+Kd / p_des+Kp+Kd
- *   MIT SOFTWARE   级联 PID -> t_ff（Kp = Kd = 0）
+ *   MIT SOFTWARE   级联 PID -> t_ff（Kp = Kd = 0），转矩放在 base.output 里，发送前应用层可以改它
  *   POSITION_SPEED ANGLE -> p_des + speed_limit
  *   SPEED          SPEED -> v_des；ANGLE -> 软件角度环输出 v_des
  *   FORCE_POSITION ANGLE -> p_des + speed_limit + current_limit
- *   不支持的组合、active = false：发保持帧（不出力，位置保持在当前位置） */
-void    dm_motor_compute_all(void);
+ *   不支持的组合、active = false：保持帧（不出力，位置保持在当前位置）
+ * 速度环是增量式，同一个电机一个控制周期内只能计算一次 */
+void    dm_motor_compute(dm_motor_t *motor);
+/* 计算指定总线上所有 DM 电机，返回计算了几个；总线号非法返回 ERR_INVAL */
+int32_t dm_motor_compute_bus(can_id_e bus);
 
-/* 按各电机的硬件模式编码并发出一帧控制帧（每个电机每次一帧，电机收到后才回复反馈）。返回发出的帧数 */
-int32_t dm_motor_send_all(void);
+/* 发送：按电机的硬件模式编码并发出一帧控制帧（电机收到后才回复反馈，所以要周期发） */
+int32_t dm_motor_send(dm_motor_t *motor);               /* 返回 bsp_can_send 的结果：TX FIFO 满为 ERR_BUSY */
+int32_t dm_motor_send_bus(can_id_e bus);                /* 指定总线上所有 DM 电机各发一帧，返回成功发出的帧数 */
 #endif

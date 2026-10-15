@@ -230,4 +230,4 @@ static int32_t bsp_uart_init(void)
     }
     return ret;
 }
-INIT_BSP(bsp_uart_init);
+INIT_BSP_STAGE1(bsp_uart_init);

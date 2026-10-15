@@ -203,4 +203,4 @@ static int32_t bsp_can_init(void)
     }
     return ret;
 }
-INIT_BSP(bsp_can_init);
+INIT_BSP_STAGE2(bsp_can_init);

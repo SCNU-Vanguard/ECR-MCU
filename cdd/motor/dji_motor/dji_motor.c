@@ -177,7 +177,7 @@ static void dji_run(void *argument, const uint8_t *message, uint16_t len)
         return;
     }
 }
-EVENT_TASK_DEFINE(dji_task, 0, 384, EVENT_QUEUE, sizeof(can_event_t), 32, 0, dji_run, NULL);
+EVENT_TASK_DEFINE(dji_task, OS_PRIORITY_HIGHEST, OS_STACK_MEDIUM, EVENT_QUEUE, sizeof(can_event_t), 32, 0, dji_run, NULL);
 
 int32_t dji_motor_register(dji_motor_t *motor, const dji_motor_config_t *config)
 {
@@ -236,8 +236,47 @@ void dji_motor_zero(dji_motor_t *motor)
     os_irq_restore(irq_key);
 }
 
-void dji_motor_compute_all(void)
+void dji_motor_compute(dji_motor_t *motor)
 {
+    motor_t *base = &motor->base;
+
+    if (!base->has_control)
+    {
+        return;
+    }
+    if (!base->active)
+    {
+        base->output = 0.0f;
+        motor->cmd = 0;
+        return;
+    }
+    if (!motor_control_ready(base))                         /* 还没收到过反馈：不输出 */
+    {
+        base->output = 0.0f;
+        motor->cmd = 0;
+        return;
+    }
+    float reference = base->target;
+
+    if (base->control_mode == MOTOR_CONTROL_ANGLE)
+    {
+        reference = motor_angle_loop(base, reference);
+    }
+    if (base->control_mode != MOTOR_CONTROL_TORQUE)
+    {
+        reference = motor_speed_loop(base, reference);
+    }
+    base->output = reference + motor_torque_feedforward(base);
+}
+
+int32_t dji_motor_compute_bus(can_id_e bus)
+{
+    int32_t computed_count = 0;
+
+    if ((unsigned)bus >= CAN_NUM)
+    {
+        return ERR_INVAL;
+    }
     for (uint8_t motor_index = 0; ; motor_index++)
     {
         motor_t *base = motor_registry_get(motor_index);
@@ -246,59 +285,40 @@ void dji_motor_compute_all(void)
         {
             break;
         }
-        if (!is_dji_type(base->type) || !base->has_control)
+        if (!is_dji_type(base->type) || base->bus != bus || !base->has_control)
         {
             continue;
         }
-        dji_motor_t *motor = (dji_motor_t *)base;
-
-        if (!base->active)
-        {
-            base->output = 0.0f;
-            motor->cmd = 0;
-            continue;
-        }
-        float reference = base->target;
-
-        if (base->control_mode == MOTOR_CONTROL_ANGLE)
-        {
-            reference = motor_angle_loop(base, reference);
-        }
-        if (base->control_mode != MOTOR_CONTROL_TORQUE)
-        {
-            reference = motor_speed_loop(base, reference);
-        }
-        base->output = reference + motor_torque_feedforward(base);
+        dji_motor_compute((dji_motor_t *)base);
+        computed_count++;
     }
+    return computed_count;
 }
 
-static void convert_outputs(void)
+/* output（用户方向的转矩给定）-> cmd（电机方向、限幅后的原始值）。
+ * 放在发送时做，这样应用层在计算和发送之间改 output（比如功率限制）也会生效 */
+static void convert_output(dji_motor_t *motor)
 {
-    for (uint8_t motor_index = 0; ; motor_index++)
+    motor_t *base = &motor->base;
+
+    if (!base->has_control || !base->active)
     {
-        motor_t *base = motor_registry_get(motor_index);
-
-        if (base == NULL)
-        {
-            break;
-        }
-        if (!is_dji_type(base->type) || !base->has_control || !base->active)
-        {
-            continue;
-        }
-        dji_motor_t *motor = (dji_motor_t *)base;
-        float physical_output = base->reverse ? -base->output : base->output;
-
-        motor->cmd = to_command(physical_output, output_limit_of(motor));
+        return;
     }
+    float physical_output = base->reverse ? -base->output : base->output;
+
+    motor->cmd = to_command(physical_output, output_limit_of(motor));
 }
 
-int32_t dji_motor_send_all(void)
+int32_t dji_motor_send_bus(can_id_e bus)
 {
-    int16_t values[CAN_NUM][TX_FRAME_COUNT][4];
-    bool    used[CAN_NUM][TX_FRAME_COUNT];
+    int16_t values[TX_FRAME_COUNT][4];
+    bool    used[TX_FRAME_COUNT];
 
-    convert_outputs();                                      /* 钩子可能改了 output，发送前统一转成 cmd */
+    if ((unsigned)bus >= CAN_NUM)
+    {
+        return ERR_INVAL;
+    }
     memset(values, 0, sizeof values);
     memset(used, 0, sizeof used);
 
@@ -310,7 +330,7 @@ int32_t dji_motor_send_all(void)
         {
             break;
         }
-        if (!is_dji_type(base->type))
+        if (!is_dji_type(base->type) || base->bus != bus)
         {
             continue;
         }
@@ -322,33 +342,31 @@ int32_t dji_motor_send_all(void)
         {
             continue;
         }
-        values[base->bus][frame_index][slot] = motor->cmd;
-        used[base->bus][frame_index] = true;
+        convert_output(motor);
+        values[frame_index][slot] = motor->cmd;
+        used[frame_index] = true;
     }
 
     int32_t sent_count = 0;
 
-    for (int bus = 0; bus < CAN_NUM; bus++)
+    for (int frame_index = 0; frame_index < TX_FRAME_COUNT; frame_index++)
     {
-        for (int frame_index = 0; frame_index < TX_FRAME_COUNT; frame_index++)
+        if (!used[frame_index])                             /* 没有电机的帧不发：无应答的帧会被无限重发 */
         {
-            if (!used[bus][frame_index])                    /* 没有电机的帧不发：无应答的帧会被无限重发 */
-            {
-                continue;
-            }
-            can_frame_t frame;
+            continue;
+        }
+        can_frame_t frame;
 
-            frame.id = tx_ids[frame_index];
-            frame.len = 8;
-            for (int slot = 0; slot < 4; slot++)
-            {
-                frame.data[2 * slot]     = (uint8_t)((uint16_t)values[bus][frame_index][slot] >> 8);
-                frame.data[2 * slot + 1] = (uint8_t)(values[bus][frame_index][slot] & 0xFF);
-            }
-            if (bsp_can_send((can_id_e)bus, &frame) == ERR_OK)
-            {
-                sent_count++;
-            }
+        frame.id = tx_ids[frame_index];
+        frame.len = 8;
+        for (int slot = 0; slot < 4; slot++)
+        {
+            frame.data[2 * slot]     = (uint8_t)((uint16_t)values[frame_index][slot] >> 8);
+            frame.data[2 * slot + 1] = (uint8_t)(values[frame_index][slot] & 0xFF);
+        }
+        if (bsp_can_send(bus, &frame) == ERR_OK)
+        {
+            sent_count++;
         }
     }
     return sent_count;

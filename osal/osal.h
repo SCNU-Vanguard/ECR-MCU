@@ -13,6 +13,46 @@
  * 本工程由 HAL 时基 TIM7 的 1 kHz 中断驱动（见 bsp/tick）。 */
 #define OS_TICK_HZ       1000u
 
+/* 周期任务允许的频率：只有这 10 档，且都能整除 OS_TICK_HZ。PERIOD_TASK_DEFINE 在编译期检查，别的值编译不过 */
+typedef enum
+{
+    OS_FREQ_1HZ    = 1,
+    OS_FREQ_2HZ    = 2,
+    OS_FREQ_5HZ    = 5,
+    OS_FREQ_10HZ   = 10,
+    OS_FREQ_20HZ   = 20,
+    OS_FREQ_50HZ   = 50,
+    OS_FREQ_100HZ  = 100,
+    OS_FREQ_200HZ  = 200,
+    OS_FREQ_500HZ  = 500,
+    OS_FREQ_1000HZ = 1000,
+} os_freq_e;
+
+#define OS_FREQ_IS_VALID(_freq)                                                          \
+    ((_freq) == OS_FREQ_1HZ   || (_freq) == OS_FREQ_2HZ   || (_freq) == OS_FREQ_5HZ   ||  \
+     (_freq) == OS_FREQ_10HZ  || (_freq) == OS_FREQ_20HZ  || (_freq) == OS_FREQ_50HZ  ||  \
+     (_freq) == OS_FREQ_100HZ || (_freq) == OS_FREQ_200HZ || (_freq) == OS_FREQ_500HZ ||  \
+     (_freq) == OS_FREQ_1000HZ)
+
+/* 任务优先级：周期任务和事件任务共用这 5 档，具体数值由各 OS 后端映射（osal/freertos/osal_freertos.c），上层不接触 */
+typedef enum
+{
+    OS_PRIORITY_LOWEST,
+    OS_PRIORITY_LOW,
+    OS_PRIORITY_MEDIUM,
+    OS_PRIORITY_HIGH,
+    OS_PRIORITY_HIGHEST,
+} os_priority_e;
+
+/* 任务栈大小：3 档，具体字数由各 OS 后端决定（osal/freertos/osal_port.h 里的 OS_STACK_WORDS），上层不接触。
+ * 选档依据：SMALL 只做简单运算和外设操作；MEDIUM 有解码、队列消息缓冲；LARGE 有命令行、格式化输出等较深的调用 */
+typedef enum
+{
+    OS_STACK_SMALL,
+    OS_STACK_MEDIUM,
+    OS_STACK_LARGE,
+} os_stack_e;
+
 /* 二值信号量 */
 typedef struct
 {

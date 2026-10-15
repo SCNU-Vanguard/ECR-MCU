@@ -12,6 +12,4 @@
         _name##_stack,                                                               \
         &_name##_sem,                                                                \
     }
-/* 框架优先级 0..PERIOD_PRIORITY_MAX-1（0 最高）。上限 24：保证周期任务都高于 CubeIDE 的 defaultTask(24) */
-#define PERIOD_PRIORITY_MAX     24
 #endif
