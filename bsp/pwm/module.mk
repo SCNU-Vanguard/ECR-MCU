@@ -1,2 +1,1 @@
-d := $(dir $(lastword $(MAKEFILE_LIST)))
-obj-$(CONFIG_BSP_PWM) += $(d)bsp_pwm.o
+obj-$(CONFIG_BSP_PWM) += bsp_pwm.o

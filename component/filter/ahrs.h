@@ -1,15 +1,26 @@
 #ifndef AHRS_H__
 #define AHRS_H__
-/* 姿态解算统一接口：上层只依赖这里，具体算法在编译期选定（robot_cfg.h）。
- * 每个算法由 CONFIG_COMPONENT_FILTER_<NAME> 决定是否编进固件，没编进去的算法选择时返回 ERR_NODEV。
+/* 姿态解算统一接口：上层只依赖这里。用哪个算法在 cdd/imu/ins/ins.c 的 INS_ALGORITHM。
+ * 每个算法由 CONFIG_COMPONENT_FILTER_<NAME> 决定是否编进固件：头文件、状态、调用都只在对应宏打开时存在。
+ * 选了没编进来的算法时 ahrs_start 返回 ERR_NODEV。
  * 坐标约定：四元数 [w, x, y, z]，Hamilton，机体系 -> 导航系；静止时比力沿 +Z；欧拉角按 Z-Y-X（yaw-pitch-roll）。 */
 #include <stdbool.h>
 #include <stdint.h>
+#ifdef CONFIG_COMPONENT_FILTER_EKF
 #include "component/filter/ekf/quaternionekf.h"
+#endif
+#ifdef CONFIG_COMPONENT_FILTER_MADGWICK
 #include "component/filter/madgwick/madgwickahrs.h"
+#endif
+#ifdef CONFIG_COMPONENT_FILTER_MAHONY
 #include "component/filter/mahony/mahony_filter.h"
+#endif
+#ifdef CONFIG_COMPONENT_FILTER_MEKF
 #include "component/filter/mekf/mekf_fliter.h"
+#endif
+#ifdef CONFIG_COMPONENT_FILTER_VQF
 #include "component/filter/vqf/vqf_filter.h"
+#endif
 
 typedef enum
 {
@@ -43,13 +54,21 @@ typedef struct
     float yaw_total_rad;                     /* 连续累计 yaw，跨 ±pi 不跳变 */
     uint32_t update_count;                   /* 成功推进的次数 */
     uint32_t reject_count;                   /* 样本被拒绝或算法数值失败的次数 */
+    /* Madgwick / EKF 的状态在各自模块的全局变量里，不放在这里 */
+#if defined(CONFIG_COMPONENT_FILTER_VQF) || defined(CONFIG_COMPONENT_FILTER_MEKF) || defined(CONFIG_COMPONENT_FILTER_MAHONY)
     union
     {
+#ifdef CONFIG_COMPONENT_FILTER_VQF
         VQF_State vqf;
+#endif
+#ifdef CONFIG_COMPONENT_FILTER_MEKF
         MEKF_State mekf;
+#endif
+#ifdef CONFIG_COMPONENT_FILTER_MAHONY
         mahony_filter_t mahony;
-        /* Madgwick / EKF 的状态在各自模块的全局变量里，同一时刻只能有一个实例 */
+#endif
     } state;
+#endif
 } ahrs_t;
 
 /* 选算法并复位。真正的初始化推迟到第一帧有效加速度（要用它算初始姿态），在那之前 ahrs_update 返回 ERR_BUSY。

@@ -1,7 +1,7 @@
 #ifndef CDD_IMU_HEATER_CONFIG_H__
 #define CDD_IMU_HEATER_CONFIG_H__
 
-/* IMU 恒温加热参数（PB1 / TIM3_CH4，500 Hz PWM）。imu_heater_step 按 10 Hz 调用（和 BMI088 驱动读温度的频率一致），ki、kd 按这个周期整定。
+/* IMU 恒温加热参数（PB1 / TIM3_CH4，500 Hz PWM）。heater_step 按 10 Hz 调用（和 BMI088 驱动读温度的频率一致），ki、kd 按这个周期整定。
  * 控制分两段（照 standard 工程里被注释掉的 BMI088_Temp_Control）：
  *   预热：大占空比持续加热，直到温度进入 [目标 - 预热余量] 并累计保持一段时间
  *   恒温：位置式 PID，进入恒温时把积分项预置到一个估计的维持占空比，加速收敛

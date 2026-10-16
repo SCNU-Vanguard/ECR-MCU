@@ -1,2 +1,3 @@
-d := $(dir $(lastword $(MAKEFILE_LIST)))
-obj-y += $(d)period.o $(d)event.o $(d)task_stats.o
+obj-$(CONFIG_OSAL) += period.o event.o task_stats.o
+
+subdir-$(CONFIG_OSAL) += freertos

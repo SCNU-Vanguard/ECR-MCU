@@ -1,5 +1,5 @@
-#ifndef APPL_DEMO_INS_TASK_H__
-#define APPL_DEMO_INS_TASK_H__
+#ifndef CDD_IMU_INS_H__
+#define CDD_IMU_INS_H__
 #include "component/common/types.h"
 #include "component/filter/ahrs.h"
 

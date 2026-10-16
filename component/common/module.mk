@@ -1,2 +1,1 @@
-d := $(dir $(lastword $(MAKEFILE_LIST)))
-obj-y += $(d)cqueue.o $(d)initcall.o $(d)framework.o $(d)taskstat.o
+obj-$(CONFIG_COMPONENT) += cqueue.o initcall.o framework.o taskstat.o

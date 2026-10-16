@@ -1,91 +1,9 @@
-# 处理 CONFIG_XXX：规范化取值、检查依赖、生成 -DCONFIG_XXX 编译宏
+# 处理 CONFIG_XXX：规范化取值，生成 -DCONFIG_XXX。
+# 某个模块没编进来、却被别的代码调用时，由链接器报 undefined reference。
 
-# 1. 取值规范化：去掉首尾空白；除 y 以外一律当作 n
+# 取值规范化：去掉首尾空白；除 y 以外一律当作 n
 $(foreach v,$(filter CONFIG_%,$(.VARIABLES)),$(eval $(v) := $(if $(filter y,$($(v))),y,n)))
 
-# 2. 依赖检查：$(call require,A,B) = A 为 y 时 B 必须也是 y，否则报错
-define require
-$(if $(filter y,$($(1))),$(if $(filter y,$($(2))),,$(error $(1)=y requires $(2)=y (see $(CFGFILE)))))
-endef
-
-# 冲突：A 和 B 不能同时为 y
-define conflict
-$(if $(filter y,$($(1))),$(if $(filter y,$($(2))),$(error $(1)=y conflicts with $(2)=y (see $(CFGFILE)))))
-endef
-
-# 子项 -> 父项
-$(call require,CONFIG_BSP_GPIO,CONFIG_BSP)
-$(call require,CONFIG_BSP_UART,CONFIG_BSP)
-$(call require,CONFIG_BSP_CAN,CONFIG_BSP)
-$(call require,CONFIG_BSP_SPI,CONFIG_BSP)
-$(call require,CONFIG_BSP_PWM,CONFIG_BSP)
-$(call require,CONFIG_BSP_USB,CONFIG_BSP)
-$(call require,CONFIG_CDD_REMOTE,CONFIG_CDD)
-$(call require,CONFIG_CDD_REMOTE_DT7,CONFIG_CDD_REMOTE)
-$(call require,CONFIG_CDD_MOTOR,CONFIG_CDD)
-$(call require,CONFIG_CDD_MOTOR_DJI_MOTOR,CONFIG_CDD_MOTOR)
-$(call require,CONFIG_CDD_MOTOR_DM_MOTOR,CONFIG_CDD_MOTOR)
-$(call require,CONFIG_CDD_IMU,CONFIG_CDD)
-$(call require,CONFIG_CDD_IMU_BMI088,CONFIG_CDD_IMU)
-$(call require,CONFIG_CDD_IMU_HEATER,CONFIG_CDD_IMU)
-$(call require,CONFIG_CDD_LED,CONFIG_CDD)
-$(call require,CONFIG_CDD_LED_WS2812,CONFIG_CDD_LED)
-$(call require,CONFIG_CDD_BUZZER,CONFIG_CDD)
-$(call require,CONFIG_APPL_DEMO,CONFIG_APPL)
-$(call require,CONFIG_APPL_DEMO_LED_CTRL,CONFIG_APPL_DEMO)
-$(call require,CONFIG_APPL_DEMO_BUZZER_CTRL,CONFIG_APPL_DEMO)
-$(call require,CONFIG_APPL_DEMO_CHASSIS_CTRL,CONFIG_APPL_DEMO)
-$(call require,CONFIG_APPL_DEMO_GIMBAL_CTRL,CONFIG_APPL_DEMO)
-$(call require,CONFIG_APPL_DEMO_SHOOT_CTRL,CONFIG_APPL_DEMO)
-$(call require,CONFIG_ROBOT_DEMO,CONFIG_ROBOT)
-$(call require,CONFIG_ROBOT_DEMO_ROBOT_INIT,CONFIG_ROBOT_DEMO)
-$(call require,CONFIG_OSAL_TASK_STATS,CONFIG_OSAL)
-$(call require,CONFIG_OSAL_CPU_USAGE,CONFIG_OSAL)
-$(call require,CONFIG_COMPONENT_LOG,CONFIG_COMPONENT)
-$(call require,CONFIG_COMPONENT_SHELL,CONFIG_COMPONENT)
-$(call require,CONFIG_COMPONENT_PID,CONFIG_COMPONENT)
-$(call require,CONFIG_COMPONENT_DSP,CONFIG_COMPONENT)
-$(call require,CONFIG_COMPONENT_MATHLIB,CONFIG_COMPONENT)
-$(call require,CONFIG_COMPONENT_FILTER,CONFIG_COMPONENT)
-$(call require,CONFIG_COMPONENT_FILTER_AHRS,CONFIG_COMPONENT_FILTER)
-$(foreach name,VQF MEKF MADGWICK MAHONY EKF KALMAN LPF NORMAL,$(call require,CONFIG_COMPONENT_FILTER_$(name),CONFIG_COMPONENT_FILTER))
-
-$(call require,CONFIG_COMPONENT_SHELL,CONFIG_BSP_UART)
-$(call require,CONFIG_COMPONENT_LOG,CONFIG_BSP_UART)
-
-# 模块 -> 它依赖的外设抽象 / 设备驱动
-$(call require,CONFIG_BSP_SPI,CONFIG_BSP_GPIO)
-$(call require,CONFIG_CDD_REMOTE_DT7,CONFIG_BSP_UART)
-$(call require,CONFIG_CDD_MOTOR,CONFIG_COMPONENT_PID)
-# 滤波算法 -> 它依赖的数学库（MEKF 打开 MEKF_USE_CMSIS_DSP，其余通过 user_lib 的矩阵接口用 DSP）
-$(call require,CONFIG_COMPONENT_FILTER_MEKF,CONFIG_COMPONENT_DSP)
-$(call require,CONFIG_COMPONENT_MATHLIB,CONFIG_COMPONENT_DSP)
-$(foreach name,KALMAN EKF,$(call require,CONFIG_COMPONENT_FILTER_$(name),CONFIG_COMPONENT_MATHLIB))
-$(call require,CONFIG_COMPONENT_FILTER_EKF,CONFIG_COMPONENT_FILTER_KALMAN)
-$(call require,CONFIG_APPL_DEMO_INS_TASK,CONFIG_APPL_DEMO)
-$(call require,CONFIG_APPL_DEMO_INS_TASK,CONFIG_CDD_IMU_BMI088)
-$(call require,CONFIG_APPL_DEMO_INS_TASK,CONFIG_COMPONENT_FILTER_AHRS)
-$(call require,CONFIG_APPL_DEMO_INS_TASK,CONFIG_ROBOT_DEMO_ROBOT_INIT)
-$(call require,CONFIG_CDD_MOTOR_DJI_MOTOR,CONFIG_BSP_CAN)
-$(call require,CONFIG_CDD_IMU_BMI088,CONFIG_BSP_SPI)
-$(call require,CONFIG_CDD_IMU_BMI088,CONFIG_BSP_GPIO)
-$(call require,CONFIG_CDD_LED_WS2812,CONFIG_BSP_SPI)
-$(call require,CONFIG_CDD_BUZZER,CONFIG_BSP_PWM)
-$(call require,CONFIG_CDD_MOTOR_DM_MOTOR,CONFIG_BSP_CAN)
-$(call require,CONFIG_APPL_DEMO_LED_CTRL,CONFIG_CDD_LED_WS2812)
-$(call require,CONFIG_APPL_DEMO_BUZZER_CTRL,CONFIG_CDD_BUZZER)
-$(call require,CONFIG_APPL_DEMO_CHASSIS_CTRL,CONFIG_CDD_MOTOR_DJI_MOTOR)
-$(call require,CONFIG_APPL_DEMO_CHASSIS_CTRL,CONFIG_ROBOT_DEMO_ROBOT_INIT)
-$(call require,CONFIG_APPL_DEMO_GIMBAL_CTRL,CONFIG_CDD_MOTOR_DM_MOTOR)
-$(call require,CONFIG_APPL_DEMO_GIMBAL_CTRL,CONFIG_ROBOT_DEMO_ROBOT_INIT)
-$(call require,CONFIG_APPL_DEMO_SHOOT_CTRL,CONFIG_CDD_MOTOR_DJI_MOTOR)
-$(call require,CONFIG_APPL_DEMO_SHOOT_CTRL,CONFIG_ROBOT_DEMO_ROBOT_INIT)
-
-# 日志是核心框架，统一从 USART10 输出，必须打开 bsp 的 UART
-ifneq ($(CONFIG_BSP_UART),y)
-$(error log goes to USART10 and needs CONFIG_BSP_UART=y)
-endif
-
-# 3. 所有为 y 的配置项，生成 -DCONFIG_XXX（C 代码里用 #ifdef CONFIG_XXX 判断）
+# 所有为 y 的配置项，生成 -DCONFIG_XXX（C 代码里用 #ifdef CONFIG_XXX 判断）
 CFG_VARS := $(sort $(filter CONFIG_%,$(.VARIABLES)))
 CFG_DEFS := $(foreach v,$(CFG_VARS),$(if $(filter y,$($(v))),-D$(v)))

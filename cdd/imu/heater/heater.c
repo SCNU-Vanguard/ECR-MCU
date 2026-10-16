@@ -1,5 +1,5 @@
-#include "cdd/imu/heater/imu_heater.h"
-#include "cdd/imu/heater/imu_heater_config.h"
+#include "cdd/imu/heater/heater.h"
+#include "cdd/imu/heater/heater_config.h"
 #include "bsp/pwm/bsp_pwm.h"
 #include "component/common/err.h"
 
@@ -27,7 +27,7 @@ static void apply_duty(float ratio)
     (void)bsp_pwm_set_duty_ppm(PWM_HEATER, duty_ppm);
 }
 
-int32_t imu_heater_init(void)
+int32_t heater_init(void)
 {
     const pid_config_t pid_config =
     {
@@ -49,7 +49,7 @@ int32_t imu_heater_init(void)
     return ret;
 }
 
-void imu_heater_step(float temperature_c)
+void heater_step(float temperature_c)
 {
     if (!initialized)
     {
@@ -89,7 +89,7 @@ void imu_heater_step(float temperature_c)
     apply_duty(heater_pid.output);
 }
 
-void imu_heater_off(void)
+void heater_off(void)
 {
     if (initialized)
     {
@@ -97,27 +97,27 @@ void imu_heater_off(void)
     }
 }
 
-float imu_heater_target_c(void)
+float heater_target_c(void)
 {
     return IMU_HEATER_TARGET_C;
 }
 
-float imu_heater_last_temperature_c(void)
+float heater_last_temperature_c(void)
 {
     return last_temperature_c;
 }
 
-uint32_t imu_heater_duty_ppm(void)
+uint32_t heater_duty_ppm(void)
 {
     return duty_ppm;
 }
 
-bool imu_heater_preheating(void)
+bool heater_preheating(void)
 {
     return preheating;
 }
 
-bool imu_heater_cutoff_active(void)
+bool heater_cutoff_active(void)
 {
     return cutoff_active;
 }

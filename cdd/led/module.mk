@@ -1,0 +1,1 @@
+subdir-$(CONFIG_CDD_LED_WS2812) += ws2812

@@ -154,7 +154,7 @@ static void dm_run(void *argument, const uint8_t *message, uint16_t len)
         return;
     }
 }
-EVENT_TASK_DEFINE(dm_task, OS_PRIORITY_HIGHEST, OS_STACK_MEDIUM, EVENT_QUEUE, sizeof(can_event_t), 32, 0, dm_run, NULL);
+EVENT_TASK_DEFINE(dm_motor_task, OS_PRIORITY_HIGHEST, OS_STACK_MEDIUM, EVENT_QUEUE, sizeof(can_event_t), 32, 0, dm_run, NULL);
 
 int32_t dm_motor_register(dm_motor_t *motor, const dm_motor_config_t *config)
 {
@@ -199,7 +199,7 @@ int32_t dm_motor_register(dm_motor_t *motor, const dm_motor_config_t *config)
     {
         return add_ret;
     }
-    return bsp_can_subscribe_event(config->bus, config->master_id, config->master_id, &dm_task);
+    return bsp_can_subscribe_event(config->bus, config->master_id, config->master_id, &dm_motor_task);
 }
 
 static int32_t send_command(dm_motor_t *motor, uint8_t command)

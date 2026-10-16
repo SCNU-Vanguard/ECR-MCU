@@ -3,7 +3,7 @@
 #   make p=h7 r=demo OPT=-O2 V=1           # 发布优化 / 显示完整命令
 #   make p=h7 r=demo clean
 #   make                                        # 等价于 make p=h7 r=demo
-# 配置文件：robot/<r>/<r>_<p>.config（CONFIG_XXX = y | n）
+# 配置文件：robot/<r>/<r>.config（CONFIG_XXX = y | n），与平台无关
 # 产物：output/<r>_<p>/<r>_<p>.{elf,bin,hex,map}
 
 TOP := $(CURDIR)
@@ -19,14 +19,17 @@ ifeq ($(MCU),)
 $(error unknown platform p=$(p); supported: h7 f4)
 endif
 
-# 配置文件存在 = 这个兵种支持这个平台
-CFGFILE := robot/$(r)/$(r)_$(p).config
+CFGFILE := robot/$(r)/$(r).config
 ifeq ($(wildcard $(CFGFILE)),)
-$(error $(CFGFILE) not found: robot "$(r)" does not support platform "$(p)")
+$(error $(CFGFILE) not found)
 endif
 
 include $(CFGFILE)
 include build/config.mk
+
+NAME := $(r)_$(p)
+OUT  := output/$(NAME)
+OBJ  := $(OUT)/obj
 include build/toolchain.mk
 include build/mcu/$(MCU).mk
 include build/modules.mk

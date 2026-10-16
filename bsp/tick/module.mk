@@ -1,2 +1,1 @@
-d := $(dir $(lastword $(MAKEFILE_LIST)))
-obj-y += $(d)bsp_tick.o
+obj-$(CONFIG_BSP) += bsp_tick.o

@@ -74,7 +74,7 @@ typedef struct
     float          cmd_torque;
     float          cmd_current_limit;
     bool           cmd_from_output;  /* true：cmd_torque 在发送时取自 base.output（软件转矩，发送前应用层可改） */
-    /* 反馈：在事件任务 dm_task 里更新（中断只拷贝帧） */
+    /* 反馈：在事件任务 dm_motor_task 里更新（中断只拷贝帧） */
     uint8_t        state;            /* 电机状态码：0 失能 1 使能 8 超压 9 欠压 A 过流 B MOS过温 C 线圈过温 D 通信丢失 E 过载 */
     float          position;         /* 当前位置，rad，电机输出轴上电后限定在 ±pi（未应用 reverse） */
     float          last_position;

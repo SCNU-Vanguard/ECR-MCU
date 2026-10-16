@@ -39,5 +39,8 @@ PLATFORM_ASM := $(P)/startup_stm32h723xx.s
 # 链接脚本是框架自己维护的副本（在 CubeIDE 生成的脚本上增补几段），不直接改 platform/ 下那份
 LDSCRIPT := build/ld/stm32h723vgt6.ld
 
+# CubeIDE 生成的 platform/ 代码不改，其自带的 missing-field-initializers 告警在这里屏蔽
+$(OBJ)/platform/%.o: CFLAGS += -Wno-missing-field-initializers
+
 # 该 MCU 的 CAN 控制器类型：bsp/can/module.mk 据此选择 bsp_can_<CAN_IP>.c（F4 的 bxCAN 另写）
 CAN_IP := fdcan

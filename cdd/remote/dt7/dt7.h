@@ -1,5 +1,5 @@
-#ifndef CDD_DT7_H__
-#define CDD_DT7_H__
+#ifndef CDD_REMOTE_DT7_H__
+#define CDD_REMOTE_DT7_H__
 #include "component/common/types.h"
 
 typedef struct

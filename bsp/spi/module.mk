@@ -1,2 +1,1 @@
-d := $(dir $(lastword $(MAKEFILE_LIST)))
-obj-$(CONFIG_BSP_SPI) += $(d)bsp_spi.o
+obj-$(CONFIG_BSP_SPI) += bsp_spi.o

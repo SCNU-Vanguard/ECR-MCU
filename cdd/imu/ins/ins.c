@@ -4,6 +4,7 @@
  * 超时：100 ms 没有新帧（DRDY 线卡死、DMA 异常），调用 bmi088_recover 重新拉起采集。
  * shell：ins_info 看姿态和统计，ins_imu 看最近一帧物理量。 */
 #include <string.h>
+#include "cmsis_compiler.h"
 #include "osal/event.h"
 #include "osal/osal.h"
 #include "component/common/initcall.h"
@@ -11,7 +12,7 @@
 #include "component/log/log.h"
 #include "component/filter/ahrs.h"
 #include "cdd/imu/bmi088/bmi088.h"
-#include "appl/demo/ins_task.h"
+#include "cdd/imu/ins/ins.h"
 
 /* 姿态解算算法（ahrs_algorithm_e）：AHRS_ALGORITHM_VQF / MEKF / MADGWICK / MAHONY / EKF。换算法就改这里，重新编译烧录 */
 #define INS_ALGORITHM               AHRS_ALGORITHM_VQF

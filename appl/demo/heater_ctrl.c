@@ -1,5 +1,5 @@
 /* demo：IMU 恒温加热任务。
- * 10 Hz 周期任务：取 ins_task 发布的 IMU 温度（BMI088 驱动每 100 帧读一次，约 10 Hz），交给 imu_heater 做预热 + PID 恒温。
+ * 10 Hz 周期任务：取 ins_task 发布的 IMU 温度（BMI088 驱动每 100 帧读一次，约 10 Hz），交给 heater 做预热 + PID 恒温。
  * 保护：温度数据超过 HEATER_STALE_LIMIT_CYCLES 个周期没有更新（INS 卡死、IMU 掉线）就关加热，防止在没有反馈时一直加热。
  * shell：heater 看阶段、目标/当前温度和占空比。 */
 #include "osal/period.h"
@@ -7,9 +7,8 @@
 #include "component/common/err.h"
 #include "component/log/log.h"
 #include "cdd/imu/bmi088/bmi088.h"
-#include "cdd/imu/heater/imu_heater.h"
-#include "appl/demo/ins_task.h"
-#include "appl/demo/heater_ctrl.h"
+#include "cdd/imu/heater/heater.h"
+#include "cdd/imu/ins/ins.h"
 
 #define HEATER_STALE_LIMIT_CYCLES   5u              /* 0.5 s */
 
@@ -19,7 +18,7 @@ static bool heater_ready;
 
 static int32_t heater_ctrl_init(void)
 {
-    int32_t ret = imu_heater_init();
+    int32_t ret = heater_init();
 
     heater_ready = (ret == ERR_OK);
     if (!heater_ready)
@@ -46,7 +45,7 @@ static void heater_ctrl_run(void *argument)
     {
         last_update_count = attitude.update_count;
         stale_cycles = 0u;
-        imu_heater_step(attitude.temperature_c);
+        heater_step(attitude.temperature_c);
         return;
     }
     if (stale_cycles < HEATER_STALE_LIMIT_CYCLES)
@@ -55,13 +54,13 @@ static void heater_ctrl_run(void *argument)
     }
     if (stale_cycles >= HEATER_STALE_LIMIT_CYCLES)
     {
-        imu_heater_off();
+        heater_off();
     }
 }
 /* 任务名 heater_ctrl_task，10 Hz，低优先级，小栈 */
 PERIOD_TASK_DEFINE(heater_ctrl_task, OS_FREQ_10HZ, OS_PRIORITY_LOW, OS_STACK_SMALL, heater_ctrl_run, NULL);
 
-bool heater_ctrl_input_stale(void)
+static bool heater_input_stale(void)
 {
     return stale_cycles >= HEATER_STALE_LIMIT_CYCLES;
 }
@@ -87,14 +86,14 @@ static int shell_heater(int argc, char *argv[])
 {
     (void)argc;
     (void)argv;
-    uint32_t duty_ppm = imu_heater_duty_ppm();
+    uint32_t duty_ppm = heater_duty_ppm();
 
     shell_out("heater: ready=%d phase=%s input_stale=%d cutoff=%d\r\n", (int)heater_ready,
-              imu_heater_preheating() ? "preheat" : "hold", (int)heater_ctrl_input_stale(), (int)imu_heater_cutoff_active());
-    print_milli("target", imu_heater_target_c(), "C");
-    print_milli("temperature", imu_heater_last_temperature_c(), "C");
+              heater_preheating() ? "preheat" : "hold", (int)heater_input_stale(), (int)heater_cutoff_active());
+    print_milli("target", heater_target_c(), "C");
+    print_milli("temperature", heater_last_temperature_c(), "C");
     shell_out("  duty = %lu.%02lu %%\r\n", (unsigned long)(duty_ppm / 10000u), (unsigned long)((duty_ppm % 10000u) / 100u));
     return 0;
 }
-SHELL_CMD(heater, shell_heater, show_imu_heater_status)
+SHELL_CMD(heater, shell_heater, show_heater_status)
 #endif

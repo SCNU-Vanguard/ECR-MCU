@@ -1,18 +1,30 @@
-# 收集所有模块目录里的 module.mk。每个 module.mk 用 obj-$(CONFIG_XXX) += $(d)xxx.o 声明自己的源文件，
-# 写法和 dsar-mcu 里各目录 Makefile 的 obj-$(CONFIG_XXX) += xxx.o 一致；CONFIG_XXX 不是 y 就不会编译。
-MODULE_DIRS := component/common component/log component/shell component/pid \
-               component/dsp component/mathlib \
-               component/filter/vqf component/filter/mekf component/filter/madgwick component/filter/mahony \
-               component/filter/ekf component/filter/kalman \
-               component/filter/lpf component/filter/normal component/filter \
-               osal osal/freertos \
-               bsp/tick bsp/gpio bsp/uart bsp/can bsp/spi bsp/pwm bsp/usb \
-               bsp/board/$(MCU) \
-               cdd/remote cdd/motor cdd/motor/dji_motor cdd/motor/dm_motor cdd/imu/bmi088 cdd/imu/heater cdd/led/ws2812 cdd/buzzer \
-               appl/$(r) robot/$(r)
+# 从每一层的根目录往下走。每个 module.mk 只写本目录里的文件名：
+#   obj-$(CONFIG_XXX) += ins.o
+# 这里在 include 之后把目录前缀补上。CONFIG 不是 y 时追加到 obj-n，不会进最终的 obj-y。
+# subdir-$(CONFIG_XXX) += 子目录。父层 CONFIG 不是 y 时，不再进入它下面的目录。
+# 头文件、库、告警仍然用扫描时设好的 $(d)（带结尾斜杠）。
+# 哪些目录参与编译只由 robot/<r>/<r>.config 决定。
 
 obj-y :=
-MODULE_INC :=      # 模块自己要加的头文件路径（第三方库用），rules.mk 会加到 -I 里
-MODULE_LIBS :=     # 模块自带的预编译库（.a/.lib），rules.mk 会加到链接命令里
-MODULE_DEFS :=     # 模块要加的编译宏（如 -DARM_MATH_CM7），rules.mk 会加到 CFLAGS 里
-include $(wildcard $(addsuffix /module.mk,$(MODULE_DIRS)))
+MODULE_INC :=
+MODULE_LIBS :=
+MODULE_DEFS :=
+scanned :=
+
+define scan
+$(if $(filter $(1),$(scanned)),,\
+$(eval scanned += $(1))\
+$(eval d := $(1)/)\
+$(eval subdir-y :=)\
+$(eval obj-before := $(obj-y))\
+$(eval include $(1)/module.mk)\
+$(eval obj-y := $(obj-before) $(addprefix $(d),$(filter-out $(obj-before),$(obj-y))))\
+$(foreach s,$(subdir-y),$(call scan,$(1)/$(s))))
+endef
+
+$(call scan,component)
+$(call scan,bsp)
+$(call scan,cdd)
+$(call scan,osal)
+$(call scan,appl)
+$(call scan,robot)

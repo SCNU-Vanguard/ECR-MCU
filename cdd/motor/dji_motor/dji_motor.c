@@ -177,7 +177,7 @@ static void dji_run(void *argument, const uint8_t *message, uint16_t len)
         return;
     }
 }
-EVENT_TASK_DEFINE(dji_task, OS_PRIORITY_HIGHEST, OS_STACK_MEDIUM, EVENT_QUEUE, sizeof(can_event_t), 32, 0, dji_run, NULL);
+EVENT_TASK_DEFINE(dji_motor_task, OS_PRIORITY_HIGHEST, OS_STACK_MEDIUM, EVENT_QUEUE, sizeof(can_event_t), 32, 0, dji_run, NULL);
 
 int32_t dji_motor_register(dji_motor_t *motor, const dji_motor_config_t *config)
 {
@@ -207,7 +207,7 @@ int32_t dji_motor_register(dji_motor_t *motor, const dji_motor_config_t *config)
     }
     if (!subscribed[config->bus])
     {
-        int32_t subscribe_ret = bsp_can_subscribe_event(config->bus, FB_ID_MIN, FB_ID_MAX, &dji_task);
+        int32_t subscribe_ret = bsp_can_subscribe_event(config->bus, FB_ID_MIN, FB_ID_MAX, &dji_motor_task);
 
         if (subscribe_ret != ERR_OK)
         {

@@ -32,7 +32,7 @@ typedef struct
     uint8_t           id;
     dji_gm6020_mode_e gm6020_mode;
     int16_t           cmd;               /* 待发送的电流（M3508/M2006）或电压/电流（GM6020）原始值，已限幅、已处理 reverse */
-    /* 反馈：在事件任务 dji_task 里更新（中断只拷贝帧） */
+    /* 反馈：在事件任务 dji_motor_task 里更新（中断只拷贝帧） */
     uint16_t offset_encoder;
     uint16_t encoder;                    /* 减去零点偏移后的单圈编码器值 0..8191 */
     uint16_t last_encoder;

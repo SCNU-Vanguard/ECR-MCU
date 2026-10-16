@@ -1,5 +1,5 @@
 #include <string.h>
-#include "cdd/remote/dt7.h"
+#include "cdd/remote/dt7/dt7.h"
 #include "bsp/uart/bsp_uart.h"
 #include "osal/event.h"
 #include "component/common/initcall.h"
