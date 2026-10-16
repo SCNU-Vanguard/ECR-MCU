@@ -46,8 +46,8 @@ EWARM/settings/
 *.ewd
 *.dep
 
-# 编辑器
-.vscode/
+# 编辑器。launch.json / tasks.json 入库；本机路径放 settings.json，不提交
+.vscode/settings.json
 .idea/
 *.swp
 *~

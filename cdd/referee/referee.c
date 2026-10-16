@@ -8,7 +8,6 @@
 #include "component/common/cqueue.h"
 #include "component/crc/crc.h"
 
-#define REFEREE_TIMEOUT_MS          1000u       /* 超过这么久没收到合法帧 = 离线 */
 #define REFEREE_MAX_DATA_LENGTH     300u        /* 协议里最长的数据段不到这个数；帧头长度超过它一定是误同步 */
 #define REFEREE_MAX_FRAME_LENGTH    (REFEREE_MAX_DATA_LENGTH + REFEREE_FRAME_OVERHEAD)
 #define REFEREE_RX_BLOCK_MAX        256u        /* 和 board.c 里 UART_REFEREE 的接收缓冲一致 */
@@ -197,8 +196,9 @@ static void referee_run(void *argument, const uint8_t *data, uint16_t len)
     stream_count += len;
     parse_stream();
 }
-EVENT_TASK_DEFINE(referee_task, OS_PRIORITY_MEDIUM, OS_STACK_MEDIUM, EVENT_QUEUE, REFEREE_RX_BLOCK_MAX, 4,
-                  REFEREE_TIMEOUT_MS, referee_run, NULL);
+/* OS_TIMEOUT_1000MS 没收到合法帧视为离线 */
+EVENT_TASK_DEFINE(referee_task, OS_PRIORITY_MEDIUM, OS_STACK_MEDIUM, EVENT_QUEUE, REFEREE_RX_BLOCK_MAX, OS_QUEUE_LEN_4,
+                  OS_TIMEOUT_1000MS, referee_run, NULL);
 
 void referee_get(referee_info_t *out)
 {

@@ -11,7 +11,7 @@ TOP := $(CURDIR)
 p ?= h7
 r ?= demo
 
-# 平台简称 -> MCU 型号（对应 platform/<mcu> 和 build/mcu/<mcu>.mk）
+# 平台简称 -> MCU 型号（对应 platform/<mcu> 和 build/<mcu>/<mcu>.mk）
 MCU_h7 := stm32h723vgt6
 MCU_f4 := stm32f407igh6
 MCU    := $(MCU_$(p))
@@ -31,6 +31,6 @@ NAME := $(r)_$(p)
 OUT  := output/$(NAME)
 OBJ  := $(OUT)/obj
 include build/toolchain.mk
-include build/mcu/$(MCU).mk
+include build/$(MCU)/$(MCU).mk
 include build/modules.mk
 include build/rules.mk

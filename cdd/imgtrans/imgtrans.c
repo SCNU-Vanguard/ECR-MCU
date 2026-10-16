@@ -11,7 +11,6 @@
 #define IMGTRANS_HEADER_1       0x53u
 #define IMGTRANS_CHANNEL_MID    1024
 #define IMGTRANS_CHANNEL_LIMIT  660         /* 减中值后的合法范围；超出的轴记 0（和原 VT03 解析一样） */
-#define IMGTRANS_TIMEOUT_MS     100u
 #define IMGTRANS_RX_BLOCK_MAX   512u        /* 和 board.c 里 UART_IMGTRANS 的接收缓冲一致 */
 /* 重组缓冲：等下半帧时最多留 FRAME_LEN - 1 字节，再加一整块新数据 */
 #define IMGTRANS_STREAM_SIZE    (IMGTRANS_FRAME_LEN - 1u + IMGTRANS_RX_BLOCK_MAX)
@@ -139,8 +138,9 @@ static void imgtrans_run(void *argument, const uint8_t *data, uint16_t len)
     stream_count += len;
     parse_stream();
 }
-EVENT_TASK_DEFINE(imgtrans_task, OS_PRIORITY_HIGH, OS_STACK_MEDIUM, EVENT_QUEUE, IMGTRANS_RX_BLOCK_MAX, 2,
-                  IMGTRANS_TIMEOUT_MS, imgtrans_run, NULL);
+/* OS_TIMEOUT_100MS 没收到合法帧视为离线 */
+EVENT_TASK_DEFINE(imgtrans_task, OS_PRIORITY_HIGH, OS_STACK_MEDIUM, EVENT_QUEUE, IMGTRANS_RX_BLOCK_MAX, OS_QUEUE_LEN_2,
+                  OS_TIMEOUT_100MS, imgtrans_run, NULL);
 
 void imgtrans_get(imgtrans_data_t *out)
 {

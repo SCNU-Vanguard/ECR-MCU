@@ -28,7 +28,7 @@ static void shell_run(void *argument, const uint8_t *data, uint16_t length)
         shellHandler(&shell, (char)data[index]);
     }
 }
-EVENT_TASK_DEFINE(shell_task, OS_PRIORITY_LOW, OS_STACK_LARGE, EVENT_QUEUE, 16, 8, 0, shell_run, NULL);
+EVENT_TASK_DEFINE(shell_task, OS_PRIORITY_LOW, OS_STACK_LARGE, EVENT_QUEUE, 16, OS_QUEUE_LEN_8, OS_TIMEOUT_NONE, shell_run, NULL);
 
 static int32_t shell_port_init(void)
 {

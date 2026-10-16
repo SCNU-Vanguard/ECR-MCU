@@ -9,8 +9,6 @@
 #define DT7_CHANNEL_MIN      364
 #define DT7_CHANNEL_MID      1024
 #define DT7_CHANNEL_MAX      1684
-#define DT7_TIMEOUT_MS  100u            /* 超过这么久没收到合法帧 = 离线 */
-
 static dt7_data_t current_data;         /* 只在 dt7_task 里写，别的任务用 dt7_get() 取快照 */
 
 static bool channel_valid(int value)
@@ -87,7 +85,8 @@ static void dt7_run(void *argument, const uint8_t *data, uint16_t len)
         current_data.bad_frames++;
     }
 }
-EVENT_TASK_DEFINE(dt7_task, OS_PRIORITY_HIGH, OS_STACK_MEDIUM, EVENT_LATEST, 36, 1, DT7_TIMEOUT_MS, dt7_run, NULL);
+/* OS_TIMEOUT_100MS 没收到合法帧视为离线 */
+EVENT_TASK_DEFINE(dt7_task, OS_PRIORITY_HIGH, OS_STACK_MEDIUM, EVENT_LATEST, 36, OS_QUEUE_LEN_1, OS_TIMEOUT_100MS, dt7_run, NULL);
 
 void dt7_get(dt7_data_t *out)
 {

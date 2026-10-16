@@ -34,6 +34,41 @@ typedef enum
      (_freq) == OS_FREQ_100HZ || (_freq) == OS_FREQ_200HZ || (_freq) == OS_FREQ_500HZ ||  \
      (_freq) == OS_FREQ_1000HZ)
 
+/* 事件队列深度：只有这 6 档。EVENT_LATEST 必须用 OS_QUEUE_LEN_1。EVENT_TASK_DEFINE 在编译期检查，别的值编译不过 */
+typedef enum
+{
+    OS_QUEUE_LEN_1  = 1,
+    OS_QUEUE_LEN_2  = 2,
+    OS_QUEUE_LEN_4  = 4,
+    OS_QUEUE_LEN_8  = 8,
+    OS_QUEUE_LEN_16 = 16,
+    OS_QUEUE_LEN_32 = 32,
+} os_queue_len_e;
+
+#define OS_QUEUE_LEN_IS_VALID(_depth)                                                        \
+    ((_depth) == OS_QUEUE_LEN_1 || (_depth) == OS_QUEUE_LEN_2  || (_depth) == OS_QUEUE_LEN_4 ||      \
+     (_depth) == OS_QUEUE_LEN_8 || (_depth) == OS_QUEUE_LEN_16 || (_depth) == OS_QUEUE_LEN_32)
+
+/* 事件任务超时：1-2-5 进位，和 OS_FREQ 同一套间隔。NONE 一直等；其余档位等不到消息就以 data == NULL 调一次任务函数。
+ * EVENT_TASK_DEFINE 在编译期检查，别的毫秒数编译不过 */
+typedef enum
+{
+    OS_TIMEOUT_NONE   = 0,
+    OS_TIMEOUT_10MS   = 10,
+    OS_TIMEOUT_20MS   = 20,
+    OS_TIMEOUT_50MS   = 50,
+    OS_TIMEOUT_100MS  = 100,
+    OS_TIMEOUT_200MS  = 200,
+    OS_TIMEOUT_500MS  = 500,
+    OS_TIMEOUT_1000MS = 1000,
+} os_timeout_e;
+
+#define OS_TIMEOUT_IS_VALID(_timeout)                                                    \
+    ((_timeout) == OS_TIMEOUT_NONE   || (_timeout) == OS_TIMEOUT_10MS   ||              \
+     (_timeout) == OS_TIMEOUT_20MS   || (_timeout) == OS_TIMEOUT_50MS   ||              \
+     (_timeout) == OS_TIMEOUT_100MS  || (_timeout) == OS_TIMEOUT_200MS  ||              \
+     (_timeout) == OS_TIMEOUT_500MS  || (_timeout) == OS_TIMEOUT_1000MS)
+
 /* 任务优先级：周期任务和事件任务共用这 5 档，具体数值由各 OS 后端映射（osal/freertos/osal_freertos.c），上层不接触 */
 typedef enum
 {

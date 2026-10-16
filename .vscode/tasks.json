@@ -1,0 +1,19 @@
+{
+  "version": "2.0.0",
+  "options": {
+    "cwd": "${workspaceFolder}"
+  },
+  "tasks": [
+    {
+      "label": "build demo_h7",
+      "type": "shell",
+      "command": "make p=h7 r=demo",
+      "group": "build"
+    },
+    {
+      "label": "flash demo_h7",
+      "type": "shell",
+      "command": "make p=h7 r=demo flash"
+    }
+  ]
+}

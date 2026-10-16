@@ -6,7 +6,7 @@
 #elif defined(STM32F407xx)
 #include "stm32f4xx_hal.h"
 #else
-#error "unknown MCU: define STM32H723xx or STM32F407xx in build/mcu/<mcu>.mk"
+#error "unknown MCU: define STM32H723xx or STM32F407xx in build/<mcu>/<mcu>.mk"
 #endif
 
 /* DMA 能不能访问这个地址：DMA1/DMA2 访问不到 DTCM（默认 .data/.bss/栈所在）和 ITCM。

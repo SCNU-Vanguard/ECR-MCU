@@ -40,16 +40,19 @@ struct event_task
     struct task_stats stats;                 /* 统计（第 8.6 节） */
 };
 
-/* 定义一个事件任务：_priority 填 OS_PRIORITY_xxx，_stack 填 OS_STACK_xxx，编译期检查参数；指针放进 event_tasks 段，不需要任何注册调用 */
+/* 定义一个事件任务：_priority 填 OS_PRIORITY_xxx，_stack 填 OS_STACK_xxx，
+ * _depth 填 OS_QUEUE_LEN_xxx，_timeout_ms 填 OS_TIMEOUT_xxx。编译期检查参数；指针放进 event_tasks 段，不需要任何注册调用 */
 #define EVENT_TASK_DEFINE(_name, _priority, _stack, _mode, _max_len, _depth, _timeout_ms, _fn, _argument)  \
     _Static_assert((_priority) >= OS_PRIORITY_LOWEST && (_priority) <= OS_PRIORITY_HIGHEST,                  \
                    #_name ": priority must be an os_priority_e value");                                \
-    _Static_assert((_depth) >= 1 && (_max_len) >= 1 && (_max_len) <= 1024, #_name ": bad size");        \
-    _Static_assert((_mode) != EVENT_LATEST || (_depth) == 1, #_name ": EVENT_LATEST needs depth 1");    \
+    _Static_assert((_max_len) >= 1 && (_max_len) <= 1024, #_name ": bad size");                        \
+    _Static_assert(OS_QUEUE_LEN_IS_VALID(_depth), #_name ": depth must be an os_queue_len_e value");           \
+    _Static_assert(OS_TIMEOUT_IS_VALID(_timeout_ms), #_name ": timeout must be an os_timeout_e value"); \
+    _Static_assert((_mode) != EVENT_LATEST || (_depth) == OS_QUEUE_LEN_1, #_name ": EVENT_LATEST needs OS_QUEUE_LEN_1"); \
     _Static_assert((_stack) >= OS_STACK_SMALL && (_stack) <= OS_STACK_LARGE, \
                    #_name ": stack must be an os_stack_e value");                                      \
     OS_EVENT_STORAGE(_name, OS_STACK_WORDS(_stack), _depth, EVENT_HDR_SIZE + (_max_len))                          \
-    struct event_task _name = { #_name, (_fn), (_argument), (_timeout_ms), (_max_len), (_depth), (_priority),    \
+    struct event_task _name = { #_name, (_fn), (_argument), (_timeout_ms), (_max_len), (_depth), (_priority),   \
                                 OS_STACK_WORDS(_stack), (_mode), 0, 0, 0, 0, 0, OS_EVENT_MEM(_name), 0, 0, { 0 } }; \
     static struct event_task *const _name##_reg                                                         \
         __attribute__((section("event_tasks"), used)) = &_name

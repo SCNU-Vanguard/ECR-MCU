@@ -17,8 +17,6 @@
 /* 姿态解算算法（ahrs_algorithm_e）：AHRS_ALGORITHM_VQF / MEKF / MADGWICK / MAHONY / EKF。换算法就改这里，重新编译烧录 */
 #define INS_ALGORITHM               AHRS_ALGORITHM_VQF
 
-#define INS_TIMEOUT_MS              100u
-#define INS_QUEUE_DEPTH             16u                     /* 1 kHz 下约 16 ms 的缓冲 */
 /* 加速度计样本比陀螺仪样本旧过这么多就认为过期，这一拍加速度计不参与校正（只用陀螺积分）：两个加速度计周期 + 1 ms */
 #define INS_ACCEL_MAX_AGE_US        (2u * BMI088_ACCEL_SAMPLE_PERIOD_US + 1000u)
 
@@ -201,8 +199,9 @@ static void ins_run(void *argument, const uint8_t *data, uint16_t length)
         ins_stats.reject_count++;
     }
 }
-/* 任务名 ins_task：事件驱动，高优先级，大栈（滤波算法的局部矩阵较多） */
-EVENT_TASK_DEFINE(ins_task, OS_PRIORITY_HIGH, OS_STACK_LARGE, EVENT_QUEUE, sizeof(bmi088_frame_t), INS_QUEUE_DEPTH, INS_TIMEOUT_MS, ins_run, NULL);
+/* 任务名 ins_task：事件驱动，高优先级，大栈（滤波算法的局部矩阵较多）。
+ * OS_QUEUE_LEN_16：1 kHz 下约 16 ms 缓冲。OS_TIMEOUT_100MS：这么久没有新帧就重新拉起采集 */
+EVENT_TASK_DEFINE(ins_task, OS_PRIORITY_HIGH, OS_STACK_LARGE, EVENT_QUEUE, sizeof(bmi088_frame_t), OS_QUEUE_LEN_16, OS_TIMEOUT_100MS, ins_run, NULL);
 
 /* 在 DRDY / DMA 完成中断里调用 */
 static void ins_on_frame(const bmi088_frame_t *frame, void *context)
