@@ -6,4 +6,5 @@ subdir-$(CONFIG_COMPONENT_PID) += pid
 subdir-$(CONFIG_COMPONENT_DSP) += dsp
 subdir-$(CONFIG_COMPONENT_MATHLIB) += mathlib
 subdir-$(CONFIG_COMPONENT_FILTER) += filter
+subdir-$(CONFIG_COMPONENT_CRC) += crc
 endif
