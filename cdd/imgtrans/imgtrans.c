@@ -17,7 +17,7 @@
 #define IMGTRANS_STREAM_SIZE    (IMGTRANS_FRAME_LEN - 1u + IMGTRANS_RX_BLOCK_MAX)
 
 static imgtrans_data_t current_data;        /* 只在 imgtrans_task 里写，别的任务用 imgtrans_get() 取快照 */
-static uint8_t  stream[IMGTRANS_STREAM_SIZE] SRAM_BSS;
+static uint8_t  stream[IMGTRANS_STREAM_SIZE] SRAM_NONCACHEABLE;
 static uint32_t stream_count;
 
 static int16_t axis(int value)

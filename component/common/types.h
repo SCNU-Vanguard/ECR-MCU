@@ -6,16 +6,13 @@
 
 #define ARRAY_SIZE(array)   (sizeof(array) / sizeof((array)[0]))
 
-/* DMA 缓冲区：放进 .dma_nc 段（链接到 AXI SRAM，MPU 已配成不可缓存）。
- * 不能放 DTCM（默认 .bss/.data 所在）：DMA1/DMA2 访问不到 DTCM。
- * 启动不清这片，使用前自己初始化。 */
-#define DMA_NC          __attribute__((section(".dma_nc"), aligned(32)))
+/* 不可缓存数据：DMA 缓冲、软件队列、字节流重组、RTOS 堆。放在 RAM_D1（0x24000000，256 KB）。
+ * DMA1/DMA2 访问不到 DTCM。memory_init() 在开 D-Cache 之前清零。 */
+#define SRAM_NONCACHEABLE __attribute__((section(".sram_noncacheable"), aligned(32)))
 
-/* 大块 CPU 缓冲（软件队列、字节流重组、协议栈收发缓冲、RTOS 堆）：放进 .sram_bss，同一片 AXI SRAM。
- * 这片不可缓存，CPU 和 DMA 都能直接访问。任务栈和热路径上的小状态留在 DTCM。
- * 启动时由 memory_init() 整段清零。 */
-#define SRAM_BSS        __attribute__((section(".sram_bss"), aligned(8)))
+/* 可缓存大表。放在 RAM（0x24040000，64 KB）。Flash 里留一份初值，memory_init() 在开 D-Cache 之前拷过去。 */
+#define SRAM_CACHEABLE    __attribute__((section(".sram_cacheable"), aligned(8)))
 
-/* 大表：放进 .sram_data。Flash 里留一份初值，memory_init() 拷到 AXI SRAM。 */
-#define SRAM_DATA       __attribute__((section(".sram_data"), aligned(8)))
+/* USB 内部 DMA 的缓冲：只能放 RAM_D2（0x30000000）。这块 DMA 访问不到 RAM_D1。 */
+#define USB_DMA           __attribute__((section(".usb_dma"), aligned(32)))
 #endif

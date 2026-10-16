@@ -20,12 +20,12 @@ BSP_UART_BUFFERS(log,           16,  128, 2048);        /* 日志口：主要是
 
 const bsp_uart_cfg_t board_uart_cfg[UART_NUM] =
 {
-    /* 逻辑口                        名称           句柄      接收使能        RS485方向脚端口     方向脚引脚 */
-    [UART_IMGTRANS]   = BSP_UART_CFG(imgtrans,      &huart1,  1,             NULL,               0),            /* USART1 PA9/PA10，921600 */
-    [UART_INTERBOARD] = BSP_UART_CFG(interboard,    &huart2,  1,             RS485_DE_GPIO_Port, RS485_DE_Pin),
-    [UART_DBUS]       = BSP_UART_CFG(dbus,          &huart5,  1,             NULL,               0),
-    [UART_REFEREE]    = BSP_UART_CFG(referee,       &huart7,  1,             NULL,               0),            /* UART7 PE7/PE8，115200 */
-    [UART_LOG]        = BSP_UART_CFG(log,           &huart10, 1,             NULL,               0),
+    /* 逻辑口                        名称           句柄      接收使能 */
+    [UART_IMGTRANS]   = BSP_UART_CFG(imgtrans,      &huart1,  1),            /* USART1 PA9/PA10，921600 */
+    [UART_INTERBOARD] = BSP_UART_CFG(interboard,    &huart2,  1),            /* USART2 PD5/PD6，PD4 硬件 DE，921600，收发都走 DMA */
+    [UART_DBUS]       = BSP_UART_CFG(dbus,          &huart5,  1),
+    [UART_REFEREE]    = BSP_UART_CFG(referee,       &huart7,  1),            /* UART7 PE7/PE8，115200 */
+    [UART_LOG]        = BSP_UART_CFG(log,           &huart10, 1),
 };
 #endif
 

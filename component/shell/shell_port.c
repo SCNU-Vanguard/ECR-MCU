@@ -7,7 +7,7 @@
 #include "component/common/initcall.h"
 
 static Shell shell;
-static char  shell_buffer[512] SRAM_BSS;        /* letter-shell 的命令行缓冲 */
+static char  shell_buffer[512] SRAM_NONCACHEABLE;   /* letter-shell 的命令行缓冲 */
 
 static signed short shell_write(char *data, unsigned short length)
 {

@@ -53,7 +53,7 @@
 ENTRY(Reset_Handler)
 
 /* Highest address of the user mode stack */
-_estack = ORIGIN(DTCMRAM) + LENGTH(DTCMRAM);    /* end of RAM */
+_estack = ORIGIN(DTCM) + LENGTH(DTCM);    /* end of DTCM，主栈从这里往下长 */
 /* Generate a link error if heap and stack don't fit into RAM */
 _Min_Heap_Size = 0x1000;      /* required amount of heap  */
 _Min_Stack_Size = 0x2000; /* required amount of stack */
@@ -61,12 +61,14 @@ _Min_Stack_Size = 0x2000; /* required amount of stack */
 /* Specify the memory areas */
 MEMORY
 {
-DTCMRAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 128K
-RAM_D1 (xrw)      : ORIGIN = 0x24000000, LENGTH = 320K
-RAM_D2 (xrw)      : ORIGIN = 0x30000000, LENGTH = 32K
-RAM_D3 (xrw)      : ORIGIN = 0x38000000, LENGTH = 16K
-ITCMRAM (xrw)      : ORIGIN = 0x00000000, LENGTH = 64K
-FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 1024K
+/* 顺序就是链接报告里的顺序，和地址高低无关 */
+DTCM   (xrw)      : ORIGIN = 0x20000000, LENGTH = 128K   /* 栈、.data、.bss */
+RAM    (xrw)      : ORIGIN = 0x24040000, LENGTH = 64K    /* AXI 后 64 KB，可缓存：大表 */
+RAM_D1 (xrw)      : ORIGIN = 0x24000000, LENGTH = 256K   /* AXI 前 256 KB，不可缓存：缓冲和队列 */
+RAM_D2 (xrw)      : ORIGIN = 0x30000000, LENGTH = 32K    /* USB 内部 DMA */
+RAM_D3 (xrw)      : ORIGIN = 0x38000000, LENGTH = 16K    /* 只给 BDMA */
+ITCM   (xrw)      : ORIGIN = 0x00000000, LENGTH = 64K
+FLASH  (rx)       : ORIGIN = 0x08000000, LENGTH = 1024K
 }
 
 /* Define output sections */
@@ -203,7 +205,7 @@ SECTIONS
 
     . = ALIGN(4);
     _edata = .;        /* define a global symbol at data end */
-  } >DTCMRAM AT> FLASH
+  } >DTCM AT> FLASH
 
   /* RAM 代码：运行地址在 ITCM，加载地址在 Flash。
    * ITCM 在 0x00000000，带 64 位 ECC。memory_init() 先把整段 ITCM 用 STRD 清零，再把本段从 Flash 拷过来。
@@ -218,10 +220,27 @@ SECTIONS
     *(.RamFunc*)
     . = ALIGN(4);
     _eramfunc = .;
-  } >ITCMRAM AT> FLASH
-  _itcm_start = ORIGIN(ITCMRAM);
-  _itcm_end = ORIGIN(ITCMRAM) + LENGTH(ITCMRAM);
+  } >ITCM AT> FLASH
+  _itcm_start = ORIGIN(ITCM);
+  _itcm_end = ORIGIN(ITCM) + LENGTH(ITCM);
 
+  /* USB 内部 DMA 能访问的内存只有 D2 SRAM。句柄里的 Setup 缓冲、CDC 收发缓冲、发送分块都放这里。
+   * 写在 .bss 前面，否则 *(.bss*) 会先把它们收进 DTCM。NOLOAD，由 memory_init() 清零 */
+  .usb_dma (NOLOAD) : ALIGN(32)
+  {
+    _susb_dma = .;
+    . = ALIGN(32);
+    *usbd_conf.o(.bss.hpcd_USB_OTG_HS)
+    . = ALIGN(32);
+    *usbd_cdc_if.o(.bss.UserRxBufferHS)
+    . = ALIGN(32);
+    *usbd_cdc_if.o(.bss.UserTxBufferHS)
+    . = ALIGN(32);
+    *(.usb_dma)
+    *(.usb_dma*)
+    . = ALIGN(32);
+    _eusb_dma = .;
+  } >RAM_D2
 
   /* Uninitialized data section */
   . = ALIGN(4);
@@ -237,41 +256,30 @@ SECTIONS
     . = ALIGN(4);
     _ebss = .;         /* define a global symbol at bss end */
     __bss_end__ = _ebss;
-  } >DTCMRAM
+  } >DTCM
 
-  /* User_heap_stack section, used to check that there is enough RAM left */
-  /* DMA 缓冲区：AXI SRAM（RAM_D1）。该区域在 CubeIDE 的 MPU_Config() 里已配成 Non-cacheable，
-   * DMA1/DMA2 可访问。NOLOAD：不占 Flash、不清零，上电内容不确定，使用前自己初始化 */
-  .dma_nc (NOLOAD) : ALIGN(32)
+  /* 不可缓存：DMA 缓冲、软件队列、字节流重组、RTOS 堆。NOLOAD，memory_init() 清零 */
+  .sram_noncacheable (NOLOAD) : ALIGN(32)
   {
-    *(.dma_nc)
-    *(.dma_nc*)
+    _ssram_noncacheable = .;
+    *(.sram_noncacheable)
+    *(.sram_noncacheable*)
     . = ALIGN(32);
+    _esram_noncacheable = .;
   } >RAM_D1
 
-  /* 大表（SRAM_DATA）：运行在 AXI SRAM，初值在 Flash。memory_init() 拷过来。
-   * 启动文件只拷 DTCM 上的 .data，不管这一段 */
-  _sisram_data = LOADADDR(.sram_data);
-  .sram_data :
+  /* 可缓存大表。初值在 Flash，memory_init() 在开 D-Cache 之前拷过来 */
+  _sisram_cacheable = LOADADDR(.sram_cacheable);
+  .sram_cacheable :
   {
     . = ALIGN(8);
-    _ssram_data = .;
-    *(.sram_data)
-    *(.sram_data*)
+    _ssram_cacheable = .;
+    *(.sram_cacheable)
+    *(.sram_cacheable*)
     . = ALIGN(8);
-    _esram_data = .;
-  } >RAM_D1 AT> FLASH
+    _esram_cacheable = .;
+  } >RAM AT> FLASH
 
-  /* 大块 CPU 缓冲（SRAM_BSS）。NOLOAD：不占 Flash。memory_init() 进 main 之前清零。
-   * 和 .dma_nc 同在 AXI SRAM，MPU 已把这片配成不可缓存 */
-  .sram_bss (NOLOAD) : ALIGN(8)
-  {
-    _ssram_bss = .;
-    *(.sram_bss)
-    *(.sram_bss*)
-    . = ALIGN(8);
-    _esram_bss = .;
-  } >RAM_D1
   ._user_heap_stack :
   {
     . = ALIGN(8);
@@ -280,7 +288,7 @@ SECTIONS
     . = . + _Min_Heap_Size;
     . = . + _Min_Stack_Size;
     . = ALIGN(8);
-  } >DTCMRAM
+  } >DTCM
 
 
 

@@ -94,13 +94,13 @@ typedef enum
     READ_TEMPERATURE
 } read_kind_e;
 
-/* DMA 缓冲区放在 DMA_NC（AXI SRAM，不可缓存）：DTCM 里的变量 DMA 访问不到。tx 只有地址有意义，其余字节发 0 */
-static uint8_t gyro_tx_buffer[8]    DMA_NC;
-static uint8_t gyro_rx_buffer[8]    DMA_NC;
-static uint8_t accel_tx_buffer[8]   DMA_NC;
-static uint8_t accel_rx_buffer[8]   DMA_NC;
-static uint8_t temperature_tx_buffer[4] DMA_NC;
-static uint8_t temperature_rx_buffer[4] DMA_NC;
+/* DMA 缓冲区放在 SRAM_NONCACHEABLE（RAM_D1）：DTCM 里的变量 DMA 访问不到。tx 只有地址有意义，其余字节发 0 */
+static uint8_t gyro_tx_buffer[8]    SRAM_NONCACHEABLE;
+static uint8_t gyro_rx_buffer[8]    SRAM_NONCACHEABLE;
+static uint8_t accel_tx_buffer[8]   SRAM_NONCACHEABLE;
+static uint8_t accel_rx_buffer[8]   SRAM_NONCACHEABLE;
+static uint8_t temperature_tx_buffer[4] SRAM_NONCACHEABLE;
+static uint8_t temperature_rx_buffer[4] SRAM_NONCACHEABLE;
 
 #define GYRO_FRAME_BYTES        7u      /* 地址 + 6 字节数据 */
 #define ACCEL_FRAME_BYTES       8u      /* 地址 + 无效字节 + 6 字节数据 */
@@ -226,7 +226,7 @@ static int32_t bmi088_init(void)
 
     imu_present = false;
     memset(&driver, 0, sizeof driver);
-    memset(gyro_rx_buffer, 0, sizeof gyro_rx_buffer);          /* .dma_nc 是 NOLOAD 段，上电不清零；DMA 没写到的字节否则会是随机值 */
+    memset(gyro_rx_buffer, 0, sizeof gyro_rx_buffer);          /* DMA 没写到的字节保持 0 */
     memset(accel_rx_buffer, 0, sizeof accel_rx_buffer);
     memset(temperature_rx_buffer, 0, sizeof temperature_rx_buffer);
     gyro_tx_buffer[0] = (uint8_t)(GYRO_DATA | 0x80u);

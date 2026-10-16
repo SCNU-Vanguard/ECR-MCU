@@ -16,14 +16,6 @@ static int uart_find(const UART_HandleTypeDef *huart)
     return -1;
 }
 
-static inline void de_set(const bsp_uart_cfg_t *config, GPIO_PinState pin_state)
-{
-    if (config->direction_port != NULL)
-    {
-        HAL_GPIO_WritePin(config->direction_port, config->direction_pin, pin_state);
-    }
-}
-
 /* RX 是否为循环 DMA：由 CubeMX 里该 DMA 请求的 Mode 决定（Normal / Circular） */
 static inline bool rx_circular(const bsp_uart_cfg_t *config)
 {
@@ -128,7 +120,6 @@ static void tx_kick(int id)
     {
         return;
     }
-    de_set(config, GPIO_PIN_SET);                                /* RS485：先拉高方向脚再发 */
     HAL_StatusTypeDef hal_status = (config->huart->hdmatx != NULL)
         ? HAL_UART_Transmit_DMA(config->huart, config->tx_buffer, (uint16_t)chunk_length)
         : HAL_UART_Transmit_IT(config->huart, config->tx_buffer, (uint16_t)chunk_length);
@@ -136,7 +127,6 @@ static void tx_kick(int id)
     if (hal_status != HAL_OK)
     {
         state->tx_drop_count += chunk_length;
-        de_set(config, GPIO_PIN_RESET);
         return;
     }
     state->tx_busy = 1u;
@@ -153,11 +143,7 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
         return;
     }
     uart_states[id].tx_busy = 0u;
-    tx_kick(id);                                                 /* 队列里还有就接着发，方向脚保持拉高 */
-    if (!uart_states[id].tx_busy)
-    {
-        de_set(&board_uart_cfg[id], GPIO_PIN_RESET);
-    }
+    tx_kick(id);                                                 /* 队列里还有就接着发 */
 }
 
 /* 溢出/帧错误/奇偶错误：HAL 已中止传输，这里计数并重启 */
@@ -173,7 +159,6 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
     if (huart->gState == HAL_UART_STATE_READY)
     {
         uart_states[id].tx_busy = 0u;
-        de_set(&board_uart_cfg[id], GPIO_PIN_RESET);
     }
     if (huart->RxState == HAL_UART_STATE_READY && board_uart_cfg[id].rx_size != 0u)
     {
@@ -222,7 +207,6 @@ static int32_t bsp_uart_init(void)
             ret = ERR_INVAL;                     /* 队列大小不是 2 的幂：立刻报错，不要静默 */
             continue;
         }
-        de_set(config, GPIO_PIN_RESET);
         if (config->rx_size != 0u)
         {
             rx_start(uart_index);

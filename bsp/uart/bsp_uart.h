@@ -17,8 +17,6 @@ typedef struct
     uint16_t      tx_size;
     uint8_t      *tx_queue_mem;            /* 软件发送队列，大小为 2 的幂 */
     uint32_t      tx_queue_size;
-    GPIO_TypeDef *direction_port;            /* RS485 方向脚（高 = 发送）；direction_port=NULL 表示没有 */
-    uint16_t      direction_pin;
 } bsp_uart_cfg_t;
 
 /* 运行状态：全部静态分配 */
@@ -35,14 +33,14 @@ typedef struct
     uint32_t error_count;
 } bsp_uart_state_t;
 
-/* 每个串口三块缓冲 + 一个配置项。DMA 缓冲放 .dma_nc，软件发送队列放 .sram_bss，都在 AXI SRAM。
+/* 每个串口三块缓冲 + 一个配置项。DMA 缓冲和软件发送队列都放 RAM_D1（不可缓存）。
  * 接收没有软件队列：每次收到的数据块直接投递给事件任务（bsp_uart_bind_event） */
 #define BSP_UART_BUFFERS(_name, _rx_size, _tx_size, _tx_queue_size)                           \
-    static uint8_t _name##_rx_buffer[_rx_size]  DMA_NC;                                     \
-    static uint8_t _name##_tx_buffer[_tx_size]  DMA_NC;                                     \
-    static uint8_t _name##_tx_queue_mem[_tx_queue_size] SRAM_BSS
+    static uint8_t _name##_rx_buffer[_rx_size]  SRAM_NONCACHEABLE;                          \
+    static uint8_t _name##_tx_buffer[_tx_size]  SRAM_NONCACHEABLE;                          \
+    static uint8_t _name##_tx_queue_mem[_tx_queue_size] SRAM_NONCACHEABLE
 /* _rx_enable = 0：该口只发不收（rx_size 配 0，初始化时不启动接收） */
-#define BSP_UART_CFG(_name, _huart, _rx_enable, _direction_port, _direction_pin)                       \
+#define BSP_UART_CFG(_name, _huart, _rx_enable)                                              \
     {                                                                                    \
         (_huart),                                                                        \
         _name##_rx_buffer,                                                                  \
@@ -51,8 +49,6 @@ typedef struct
         sizeof _name##_tx_buffer,                                                           \
         _name##_tx_queue_mem,                                                                 \
         sizeof _name##_tx_queue_mem,                                                          \
-        (_direction_port),                                                                      \
-        (_direction_pin),                                                                       \
     }
 
 extern const bsp_uart_cfg_t board_uart_cfg[UART_NUM];    /* 由 board.c 提供 */

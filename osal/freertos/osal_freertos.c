@@ -5,7 +5,7 @@
 #include CMSIS_device_header            /* __get_IPSR；FreeRTOSConfig.h 里定义为 "stm32h7xx.h" */
 
 /* configAPPLICATION_ALLOCATED_HEAP = 1：堆不放 DTCM。框架任务是静态分配的，这块留给 pvPortMalloc */
-uint8_t ucHeap[configTOTAL_HEAP_SIZE] SRAM_BSS;
+uint8_t ucHeap[configTOTAL_HEAP_SIZE] SRAM_NONCACHEABLE;
 
 static inline TickType_t ms_to_ticks(uint32_t time_ms)
 {

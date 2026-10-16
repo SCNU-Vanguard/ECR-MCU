@@ -37,8 +37,8 @@ int32_t bsp_spi_xfer(spi_id_e bus, gpio_id_e cs, const uint8_t *tx, uint8_t *rx,
 
 /* 异步（DMA）事务：拉低 cs，启动 DMA 就返回，完成时在中断里拉高 cs 并调用 done。任务和中断里都能调用，不阻塞。
  *   - 需要在 CubeMX 里给这个 SPI 配好 DMA（RX 和 TX 各一路）并使能 DMA 中断；没配返回 ERR_NODEV
- *   - tx / rx 都必须放在 DMA 能访问的内存（DMA_NC，见 component/common/types.h），否则返回 ERR_INVAL；
- *     DMA_NC 所在的 AXI SRAM 已被 MPU 配成不可缓存，不需要做 Cache 维护
+ *   - tx / rx 都必须放在 DMA 能访问的内存（SRAM_NONCACHEABLE，见 component/common/types.h），否则返回 ERR_INVAL；
+ *     RAM_D1 已被 MPU 配成不可缓存，不需要做 Cache 维护
  *   - rx 不能为 NULL（全双工）；len 不超过 65535
  *   - 总线上已经有异步事务在跑返回 ERR_BUSY，调用者自己决定排队还是丢弃 */
 int32_t bsp_spi_xfer_async(spi_id_e bus, gpio_id_e cs, const uint8_t *tx, uint8_t *rx, uint16_t len,
