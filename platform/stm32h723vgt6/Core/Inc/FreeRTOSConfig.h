@@ -166,7 +166,8 @@ standard names. */
 #define USE_CUSTOM_SYSTICK_HANDLER_IMPLEMENTATION 0
 
 /* USER CODE BEGIN Defines */
-/* Section where parameter definitions can be added (for instance, to override default ones in FreeRTOS.h) */
+/* 堆数组由应用提供（osal/freertos/osal_freertos.c 里的 ucHeap），放到 AXI SRAM */
+#define configAPPLICATION_ALLOCATED_HEAP         1
 /* USER CODE END Defines */
 
 #endif /* FREERTOS_CONFIG_H */

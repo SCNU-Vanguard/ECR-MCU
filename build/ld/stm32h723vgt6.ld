@@ -200,12 +200,27 @@ SECTIONS
     _sdata = .;        /* create a global symbol at data start */
     *(.data)           /* .data sections */
     *(.data*)          /* .data* sections */
-    *(.RamFunc)        /* .RamFunc sections */
-    *(.RamFunc*)       /* .RamFunc* sections */
 
     . = ALIGN(4);
     _edata = .;        /* define a global symbol at data end */
   } >DTCMRAM AT> FLASH
+
+  /* RAM 代码：运行地址在 ITCM，加载地址在 Flash。
+   * ITCM 在 0x00000000，带 64 位 ECC。memory_init() 先把整段 ITCM 用 STRD 清零，再把本段从 Flash 拷过来。
+   * 函数标 __RAM_FUNC（section .RamFunc）就会进这里。现在没有这样的函数，拷贝长度是 0。
+   * 链接报告里的 ITCM 用量只算这段镜像，不算启动时清掉的 64 KB。 */
+  _siramfunc = LOADADDR(.itcm_text);
+  .itcm_text :
+  {
+    . = ALIGN(4);
+    _sramfunc = .;
+    *(.RamFunc)
+    *(.RamFunc*)
+    . = ALIGN(4);
+    _eramfunc = .;
+  } >ITCMRAM AT> FLASH
+  _itcm_start = ORIGIN(ITCMRAM);
+  _itcm_end = ORIGIN(ITCMRAM) + LENGTH(ITCMRAM);
 
 
   /* Uninitialized data section */
@@ -232,6 +247,30 @@ SECTIONS
     *(.dma_nc)
     *(.dma_nc*)
     . = ALIGN(32);
+  } >RAM_D1
+
+  /* 大表（SRAM_DATA）：运行在 AXI SRAM，初值在 Flash。memory_init() 拷过来。
+   * 启动文件只拷 DTCM 上的 .data，不管这一段 */
+  _sisram_data = LOADADDR(.sram_data);
+  .sram_data :
+  {
+    . = ALIGN(8);
+    _ssram_data = .;
+    *(.sram_data)
+    *(.sram_data*)
+    . = ALIGN(8);
+    _esram_data = .;
+  } >RAM_D1 AT> FLASH
+
+  /* 大块 CPU 缓冲（SRAM_BSS）。NOLOAD：不占 Flash。memory_init() 进 main 之前清零。
+   * 和 .dma_nc 同在 AXI SRAM，MPU 已把这片配成不可缓存 */
+  .sram_bss (NOLOAD) : ALIGN(8)
+  {
+    _ssram_bss = .;
+    *(.sram_bss)
+    *(.sram_bss*)
+    . = ALIGN(8);
+    _esram_bss = .;
   } >RAM_D1
   ._user_heap_stack :
   {

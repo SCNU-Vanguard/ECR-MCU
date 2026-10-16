@@ -35,12 +35,12 @@ typedef struct
     uint32_t error_count;
 } bsp_uart_state_t;
 
-/* 每个串口三块缓冲 + 一个配置项。DMA 缓冲放 .dma_nc（AXI SRAM，不可缓存、DMA 可达）。
+/* 每个串口三块缓冲 + 一个配置项。DMA 缓冲放 .dma_nc，软件发送队列放 .sram_bss，都在 AXI SRAM。
  * 接收没有软件队列：每次收到的数据块直接投递给事件任务（bsp_uart_bind_event） */
 #define BSP_UART_BUFFERS(_name, _rx_size, _tx_size, _tx_queue_size)                           \
     static uint8_t _name##_rx_buffer[_rx_size]  DMA_NC;                                     \
     static uint8_t _name##_tx_buffer[_tx_size]  DMA_NC;                                     \
-    static uint8_t _name##_tx_queue_mem[_tx_queue_size]
+    static uint8_t _name##_tx_queue_mem[_tx_queue_size] SRAM_BSS
 /* _rx_enable = 0：该口只发不收（rx_size 配 0，初始化时不启动接收） */
 #define BSP_UART_CFG(_name, _huart, _rx_enable, _direction_port, _direction_pin)                       \
     {                                                                                    \

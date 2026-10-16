@@ -9,8 +9,8 @@ extern USBD_HandleTypeDef hUsbDeviceHS;   /* usb_device.c 里定义，没有头�
 
 #define TX_CHUNK  512u
 
-static uint8_t tx_queue_mem[2048];
-static uint8_t tx_chunk[TX_CHUNK];          /* USB_OTG 没开 DMA（FIFO 模式），普通 RAM 即可 */
+static uint8_t tx_queue_mem[2048] SRAM_BSS;
+static uint8_t tx_chunk[TX_CHUNK] SRAM_BSS; /* USB_OTG 没开 DMA（FIFO 模式），CPU 从这里交给 USB 库 */
 static struct __cqueue tx_queue;
 static struct event_task *rx_event;
 static volatile uint8_t tx_busy;

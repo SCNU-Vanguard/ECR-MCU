@@ -17,7 +17,7 @@
 #define IMGTRANS_STREAM_SIZE    (IMGTRANS_FRAME_LEN - 1u + IMGTRANS_RX_BLOCK_MAX)
 
 static imgtrans_data_t current_data;        /* 只在 imgtrans_task 里写，别的任务用 imgtrans_get() 取快照 */
-static uint8_t  stream[IMGTRANS_STREAM_SIZE];
+static uint8_t  stream[IMGTRANS_STREAM_SIZE] SRAM_BSS;
 static uint32_t stream_count;
 
 static int16_t axis(int value)
@@ -27,7 +27,7 @@ static int16_t axis(int value)
     return (centered > IMGTRANS_CHANNEL_LIMIT || centered < -IMGTRANS_CHANNEL_LIMIT) ? 0 : (int16_t)centered;
 }
 
-bool imgtrans_parse(const uint8_t *frame, imgtrans_data_t *out)
+bool imgtrans_parse(const uint8_t *frame, imgtrans_data_t *out) 
 {
     if (frame[0] != IMGTRANS_HEADER_0 || frame[1] != IMGTRANS_HEADER_1 || !crc16_verify(frame, IMGTRANS_FRAME_LEN))
     {

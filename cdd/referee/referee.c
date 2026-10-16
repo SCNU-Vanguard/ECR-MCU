@@ -16,7 +16,7 @@
 #define REFEREE_STREAM_SIZE         (REFEREE_MAX_FRAME_LENGTH + REFEREE_RX_BLOCK_MAX)
 
 static referee_info_t current_info;             /* 只在 referee_task 里写，别的任务用 referee_get() 取快照 */
-static uint8_t  stream[REFEREE_STREAM_SIZE];    /* 字节流重组缓冲，只在 referee_task 里用 */
+static uint8_t  stream[REFEREE_STREAM_SIZE] SRAM_BSS;   /* 字节流重组缓冲，只在 referee_task 里用 */
 static uint32_t stream_count;
 static uint8_t  tx_sequence;                    /* 发送包序号 */
 
