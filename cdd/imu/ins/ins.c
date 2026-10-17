@@ -216,12 +216,12 @@ static int32_t ins_init(void)
 
     if (ret != ERR_OK)
     {
-        LOGE("ins", "default algorithm unavailable: %d", (int)ret);
+        LOGE("default algorithm unavailable: %d", (int)ret);
         return ret;
     }
     if (!bmi088_present())
     {
-        LOGW("ins", "bmi088 not present, ins disabled");
+        LOGW("bmi088 not present, ins disabled");
         return ERR_NODEV;
     }
     bmi088_set_frame_callback(ins_on_frame, NULL);

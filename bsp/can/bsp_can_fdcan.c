@@ -83,7 +83,7 @@ int32_t bsp_can_send(can_id_e bus, const can_frame_t *frame)
         .Identifier          = frame->id,
         .IdType              = FDCAN_STANDARD_ID,
         .TxFrameType         = FDCAN_DATA_FRAME,
-        .DataLength          = ((uint32_t)frame->len) << 16,        /* H7 的 DLC 编码在 bit16..19，经典帧 0..8 直接移位 */
+        .DataLength          = (uint32_t)frame->len,                 /* HAL 要求 FDCAN_DLC_BYTES_n（0..8 等于字节数），写进邮箱时它自己再左移 16 位 */
         .ErrorStateIndicator = FDCAN_ESI_ACTIVE,
         .BitRateSwitch       = FDCAN_BRS_OFF,
         .FDFormat            = FDCAN_CLASSIC_CAN,
@@ -124,7 +124,7 @@ void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t interrupt_f
             break;
         }
         frame.id  = rx_header.Identifier;
-        frame.len = (uint8_t)(rx_header.DataLength >> 16);
+        frame.len = (uint8_t)rx_header.DataLength;                  /* GetRxMessage 已经把 DLC 收成 0..15，0..8 就是字节数 */
         if (frame.len > 8u)
         {
             frame.len = 8u;

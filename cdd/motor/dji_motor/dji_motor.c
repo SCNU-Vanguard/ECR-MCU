@@ -3,6 +3,7 @@
 #include "bsp/can/bsp_can.h"
 #include "bsp/tick/bsp_tick.h"
 #include "component/common/err.h"
+#include "component/log/log.h"
 #include "osal/osal.h"
 #include "osal/event.h"
 
@@ -154,6 +155,10 @@ static void dji_run(void *argument, const uint8_t *message, uint16_t len)
         return;
     }
     memcpy(&event, message, sizeof event);
+    if (motor_candump_enabled())
+    {
+        LOGI("dji can%u %03X [%u]", (unsigned)event.bus + 1u, (unsigned)event.id, (unsigned)event.len);
+    }
     if (event.len < 7u)
     {
         return;

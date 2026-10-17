@@ -20,6 +20,7 @@ typedef enum
     MOTOR_TYPE_GM6020,
     MOTOR_TYPE_DM4310,
     MOTOR_TYPE_DM8009P,
+    MOTOR_TYPE_DM3519,
 } motor_type_e;
 
 /* 控制模式 = 最外层闭环：
@@ -47,12 +48,15 @@ typedef struct
     const float *torque_feedforward;       /* 转矩前馈，加在转矩给定上，默认 0 */
 } motor_signals_t;
 
-/* 控制配置：两个环（角度、速度）的 PID 参数 + 控制信号来源。注册时传给各厂家的 register；传 NULL = 不用软件控制（DJI 可直接 dji_motor_set_cmd） */
+/* 控制配置：模式在注册时写死。
+ *   SPEED 只用速度环；ANGLE 是角度环输出串进速度环；TORQUE 两个环都不跑。
+ * 运行时 motor_set_target 只改目标值，不改模式。传 NULL = 不用软件控制，模式保持 TORQUE */
 typedef struct
 {
-    pid_config_t    angle_pid;
-    pid_config_t    speed_pid;
-    motor_signals_t signals;
+    motor_control_mode_e mode;
+    pid_config_t         angle_pid;
+    pid_config_t         speed_pid;
+    motor_signals_t      signals;
 } motor_control_config_t;
 
 /* 错误位：motor_error() 的返回值 */
@@ -112,13 +116,13 @@ void motor_bind_angle_feedback(motor_t *motor, const float *angle_feedback);
 void motor_bind_speed_feedback(motor_t *motor, const float *speed_feedback);
 void motor_bind_speed_feedforward(motor_t *motor, const float *speed_feedforward);
 void motor_bind_torque_feedforward(motor_t *motor, const float *torque_feedforward);
-/* 设置控制模式和目标值（角度 rad / 转速 rad/s / 转矩给定）。
+/* 设置目标值。单位由注册时写死的模式决定：角度 rad、转速 rad/s 或转矩给定。
  * 没有控制配置的电机也能设置，但只有硬件自己闭环的模式（DM 的 MIT 原生/位置速度/速度/力位混合）会生效，
  * 需要软件 PID 的组合没有控制配置时 DJI 输出 0，DM 发保持帧 */
-int32_t motor_set_target(motor_t *motor, motor_control_mode_e mode, float target);
+int32_t motor_set_target(motor_t *motor, float target);
 /* 打开/关闭输出。关闭：DJI 发 0，DM 发保持帧；同时清零两个 PID。
  * 打开：目标会在下一次计算、拿到有效反馈时自动重设为"当前角度"（角度模式）或 0（速度/转矩模式）；
- * 在这之前（还没收到过反馈）输出为 0，所以上电后可以直接 motor_set_target + motor_set_active(true) */
+ * 在这之前（还没收到过反馈）输出为 0，所以上电后可以直接 motor_set_active(true) */
 void motor_set_active(motor_t *motor, bool active);
 /* 各厂家的 compute 里调用：有了第一次反馈才返回 true；返回 true 时若 hold_pending，先把目标重设为当前状态。返回 false 时该电机本周期输出 0 / 保持 */
 bool motor_control_ready(motor_t *motor);
@@ -140,5 +144,9 @@ void  motor_pids_clear(motor_t *motor);
 int32_t motor_compute(motor_t *motor);              /* 成功 ERR_OK；电机类型未编译进来返回 ERR_INVAL */
 int32_t motor_compute_bus(can_id_e bus);            /* 返回计算了几个电机；总线号非法返回 ERR_INVAL */
 int32_t motor_send_bus(can_id_e bus);               /* 返回发出的帧数；总线号非法返回 ERR_INVAL */
+
+/* candump：打开后 DJI/DM 接收任务每收到一帧打一行总线、ID、长度。默认关 */
+bool motor_candump_enabled(void);
+void motor_candump_set(bool enabled);
 
 #endif

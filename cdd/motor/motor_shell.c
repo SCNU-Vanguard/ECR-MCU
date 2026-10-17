@@ -142,4 +142,29 @@ int motor_shell_pid(const char *name, motor_t *motor, int argc, char *argv[])
     print_milli(argv[2], *field);
     return 0;
 }
+
+static int shell_candump(int argc, char *argv[])
+{
+    if (argc == 1)
+    {
+        shell_out("candump %s\r\n", motor_candump_enabled() ? "on" : "off");
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "on") == 0)
+    {
+        motor_candump_set(true);
+    }
+    else if (argc == 2 && strcmp(argv[1], "off") == 0)
+    {
+        motor_candump_set(false);
+    }
+    else
+    {
+        shell_out("usage: candump [on|off]\r\n");
+        return -1;
+    }
+    shell_out("candump %s\r\n", motor_candump_enabled() ? "on" : "off");
+    return 0;
+}
+SHELL_CMD(candump, shell_candump, print_each_received_can_frame)
 #endif

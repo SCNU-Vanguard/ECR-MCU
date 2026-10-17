@@ -209,7 +209,7 @@ static int32_t apply_settings(const char *chip_name, const register_setting_t *s
 
         if (write_result != ERR_OK || read_result != ERR_OK || read_back != settings[setting_index].value)
         {
-            LOGW("bmi088", "%s reg 0x%02X wrote 0x%02X read 0x%02X", chip_name, settings[setting_index].reg,
+            LOGW("%s reg 0x%02X wrote 0x%02X read 0x%02X", chip_name, settings[setting_index].reg,
                  settings[setting_index].value, read_back);
             return ERR_IO;
         }
@@ -240,14 +240,14 @@ static int32_t bmi088_init(void)
     (void)accel_read(ACCEL_CHIP_ID, &chip_id, 1);               /* 复位后再空读一次 */
     if (accel_read(ACCEL_CHIP_ID, &chip_id, 1) != ERR_OK || chip_id != ACCEL_CHIP_ID_VALUE)
     {
-        LOGW("bmi088", "accel id=0x%02X (want 0x1E)", chip_id);
+        LOGW("accel id=0x%02X (want 0x1E)", chip_id);
         return ERR_NODEV;
     }
     (void)gyro_write(GYRO_SOFTRESET, SOFTRESET_CMD);
     bsp_delay_ms(35);
     if (gyro_read(GYRO_CHIP_ID, &chip_id, 1) != ERR_OK || chip_id != GYRO_CHIP_ID_VALUE)
     {
-        LOGW("bmi088", "gyro id=0x%02X (want 0x0F)", chip_id);
+        LOGW("gyro id=0x%02X (want 0x0F)", chip_id);
         return ERR_NODEV;
     }
     if (apply_settings("accel", accel_settings, sizeof accel_settings / sizeof accel_settings[0], true) != ERR_OK ||

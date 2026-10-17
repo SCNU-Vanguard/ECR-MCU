@@ -28,6 +28,7 @@ int32_t motor_compute(motor_t *motor)
 #ifdef CONFIG_CDD_MOTOR_DM_MOTOR
         case MOTOR_TYPE_DM4310:
         case MOTOR_TYPE_DM8009P:
+        case MOTOR_TYPE_DM3519:
             dm_motor_compute((dm_motor_t *)motor);
             return ERR_OK;
 #endif

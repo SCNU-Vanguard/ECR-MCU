@@ -6,6 +6,17 @@
 
 static motor_t *registered_motors[MOTOR_MAX_COUNT];
 static uint8_t  registered_count;
+static bool     candump_enabled;
+
+bool motor_candump_enabled(void)
+{
+    return candump_enabled;
+}
+
+void motor_candump_set(bool enabled)
+{
+    candump_enabled = enabled;
+}
 
 int32_t motor_registry_add(motor_t *motor)
 {
@@ -85,7 +96,7 @@ void motor_control_setup(motor_t *motor, const motor_control_config_t *config)
 {
     motor->has_control = (config != NULL);
     motor->active = false;
-    motor->control_mode = MOTOR_CONTROL_TORQUE;
+    motor->control_mode = (config != NULL) ? config->mode : MOTOR_CONTROL_TORQUE;
     motor->target = 0.0f;
     motor_bind_angle_feedback(motor, (config != NULL) ? config->signals.angle_feedback : NULL);
     motor_bind_speed_feedback(motor, (config != NULL) ? config->signals.speed_feedback : NULL);
@@ -99,13 +110,12 @@ void motor_control_setup(motor_t *motor, const motor_control_config_t *config)
     pid_init(&motor->speed_pid, &config->speed_pid);
 }
 
-int32_t motor_set_target(motor_t *motor, motor_control_mode_e mode, float target)
+int32_t motor_set_target(motor_t *motor, float target)
 {
     if (motor == NULL)
     {
         return ERR_INVAL;
     }
-    motor->control_mode = mode;
     motor->target = target;
     return ERR_OK;
 }

@@ -9,7 +9,7 @@
 #ifndef CONFIG_OSAL_TASK_STATS
 void task_stats_dump(void)
 {
-    LOGW("stats", "CONFIG_OSAL_TASK_STATS is off");
+    LOGW("CONFIG_OSAL_TASK_STATS is off");
 }
 #else
 
@@ -50,7 +50,7 @@ static void dump_period(struct period_task *task, void *context)
 
     if (stats.run_count == 0u)
     {
-        LOGI("stats", "%-14s P cfg=%luHz run=0/s ov=%lu (没有执行) stk=%luw", task->name,
+        LOGI( "%-14s P cfg=%luHz run=0/s ov=%lu (没有执行) stk=%luw", task->name,
              (unsigned long)(OS_TICK_HZ / task->div), (unsigned long)overrun_delta, (unsigned long)stack_free_words);
         return;
     }
@@ -65,7 +65,7 @@ static void dump_period(struct period_task *task, void *context)
     uint32_t latency_avg_us = cycles_to_us_x10(latency_avg_cycles);
     uint32_t latency_max_us = cycles_to_us_x10(stats.latency_max);
 
-    LOGI("stats", "%-14s P cfg=%luHz run=%lu.%lu/s ov=%lu exec(us) avg/min/max=%lu.%lu/%lu.%lu/%lu.%lu "
+    LOGI( "%-14s P cfg=%luHz run=%lu.%lu/s ov=%lu exec(us) avg/min/max=%lu.%lu/%lu.%lu/%lu.%lu "
                   "int(us) min/max=%lu.%lu/%lu.%lu lat(us) avg/max=%lu.%lu/%lu.%lu stk=%luw",
          task->name, (unsigned long)(OS_TICK_HZ / task->div), X10(run_rate), (unsigned long)overrun_delta,
          X10(exec_avg_us), X10(exec_min_us), X10(exec_max_us),
@@ -100,7 +100,7 @@ static void dump_event(struct event_task *task, void *context)
 
     if (stats.run_count == 0u)
     {
-        LOGI("stats", "%-14s E post=%lu.%lu/s done=0/s drop=%lu ovsz=%lu tmo=%lu qmax=%u stk=%luw (没有处理)", task->name,
+        LOGI( "%-14s E post=%lu.%lu/s done=0/s drop=%lu ovsz=%lu tmo=%lu qmax=%u stk=%luw (没有处理)", task->name,
              X10(post_rate), (unsigned long)drop_delta, (unsigned long)oversize_delta, (unsigned long)timeout_delta,
              stats.qmax, (unsigned long)stack_free_words);
         return;
@@ -115,7 +115,7 @@ static void dump_event(struct event_task *task, void *context)
     uint32_t latency_avg_us = cycles_to_us_x10(latency_avg_cycles);
     uint32_t latency_max_us = cycles_to_us_x10(stats.latency_max);
 
-    LOGI("stats", "%-14s E post=%lu.%lu/s done=%lu.%lu/s drop=%lu ovsz=%lu tmo=%lu qmax=%u exec(us) avg/min/max=%lu.%lu/%lu.%lu/%lu.%lu "
+    LOGI( "%-14s E post=%lu.%lu/s done=%lu.%lu/s drop=%lu ovsz=%lu tmo=%lu qmax=%u exec(us) avg/min/max=%lu.%lu/%lu.%lu/%lu.%lu "
                   "int(us) min/max=%lu.%lu/%lu.%lu lat(us) avg/max=%lu.%lu/%lu.%lu stk=%luw",
          task->name, X10(post_rate), X10(done_rate), (unsigned long)drop_delta, (unsigned long)oversize_delta,
          (unsigned long)timeout_delta, stats.qmax,
@@ -131,7 +131,7 @@ void task_stats_dump(void)
     cycles_per_us = task_stats_cycles_per_us();
     window_ms = now_ms - last_dump_ms;
     last_dump_ms = now_ms;
-    LOGI("stats", "---- window %lu ms (cpu %lu MHz) ----", (unsigned long)window_ms, (unsigned long)cycles_per_us);
+    LOGI( "---- window %lu ms (cpu %lu MHz) ----", (unsigned long)window_ms, (unsigned long)cycles_per_us);
     period_foreach(dump_period, NULL);
     event_foreach(dump_event, NULL);
 }

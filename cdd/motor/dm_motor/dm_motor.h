@@ -30,8 +30,11 @@ typedef enum
 /* 状态码：反馈帧里的 state，0 = 失能，1 = 使能，其余都是故障码 */
 #define DM_STATE_ENABLED    1u
 
-/* 注册配置：type 只能是 MOTOR_TYPE_DM4310 / MOTOR_TYPE_DM8009P。
- * p_max / v_max / t_max 必须和电机里设置的映射范围一致，否则反馈和 MIT 控制帧会解码/编码错（默认 12.5 / 30 / 10） */
+/* 注册配置：type 只能是 MOTOR_TYPE_DM4310 / MOTOR_TYPE_DM8009P / MOTOR_TYPE_DM3519。
+ * p_max / v_max / t_max 必须和电机里设置的映射范围一致，否则反馈和 MIT 控制帧会解码/编码错（4310 常见 12.5 / 30 / 10）。
+ * DM3519（DM3520-1EC 驱动器）协议与上面相同，但位置是减速前的电机侧，速度和转矩是输出轴。
+ * 驱动按减速比 3591/187 把位置换成输出轴 rad，应用层看到的角度、速度、转矩都在输出轴上。
+ * 输出轴额定 3.5 N·m / 395 rpm，峰值 7.8 N·m / 空载 435 rpm。 */
 typedef struct
 {
     can_id_e       bus;
@@ -66,6 +69,7 @@ typedef struct
     float          kd;
     float          speed_limit;
     float          current_limit;
+    float          gear_ratio;      /* 电机侧 / 输出轴。直驱型号为 1；DM3519 为 3591/187 */
     /* 待发送的控制量（电机方向，已处理 reverse）：由 dm_motor_compute 计算，dm_motor_send 按模式编码发出 */
     float          cmd_position;
     float          cmd_velocity;
@@ -76,7 +80,7 @@ typedef struct
     bool           cmd_from_output;  /* true：cmd_torque 在发送时取自 base.output（软件转矩，发送前应用层可改） */
     /* 反馈：在事件任务 dm_motor_task 里更新（中断只拷贝帧） */
     uint8_t        state;            /* 电机状态码：0 失能 1 使能 8 超压 9 欠压 A 过流 B MOS过温 C 线圈过温 D 通信丢失 E 过载 */
-    float          position;         /* 当前位置，rad，电机输出轴上电后限定在 ±pi（未应用 reverse） */
+    float          position;         /* 协议位置，rad，未应用 reverse。直驱型号即输出轴；DM3519 是减速前的电机侧 */
     float          last_position;
     int32_t        round_count;      /* 位置跨过 ±pi 边界的次数，用于累计多圈角度 */
     float          velocity;         /* rad/s（未应用 reverse） */

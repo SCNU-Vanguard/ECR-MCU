@@ -3,6 +3,7 @@
 #include "bsp/can/bsp_can.h"
 #include "bsp/tick/bsp_tick.h"
 #include "component/common/err.h"
+#include "component/log/log.h"
 #include "osal/osal.h"
 #include "osal/event.h"
 
@@ -37,10 +38,17 @@
 #define HYBRID_SPEED_SCALE      100.0f
 #define HYBRID_CURRENT_SCALE    10000.0f
 #define HYBRID_FIELD_MAX        10000.0f
+/* DM3519 说明书：齿轮减速比 3591/187（约 1:19.2）。位置在电机侧，速度和转矩在输出轴 */
+#define DM3519_GEAR_RATIO     (3591.0f / 187.0f)
 
 static bool is_dm_type(motor_type_e type)
 {
-    return type == MOTOR_TYPE_DM4310 || type == MOTOR_TYPE_DM8009P;
+    return type == MOTOR_TYPE_DM4310 || type == MOTOR_TYPE_DM8009P || type == MOTOR_TYPE_DM3519;
+}
+
+static float gear_ratio_of(motor_type_e type)
+{
+    return type == MOTOR_TYPE_DM3519 ? DM3519_GEAR_RATIO : 1.0f;
 }
 
 static float limit_value(float value, float minimum, float maximum)
@@ -103,9 +111,10 @@ static void update_feedback(dm_motor_t *motor, const can_event_t *event)
     }
 
     float sign = motor->base.reverse ? -1.0f : 1.0f;
+    float output_position = motor->position / motor->gear_ratio;
 
-    motor->base.single_angle_rad = sign * motor->position;
-    motor->base.total_angle_rad = sign * (motor->position + (float)motor->round_count * TWO_PI);
+    motor->base.single_angle_rad = sign * output_position;
+    motor->base.total_angle_rad = sign * (motor->position + (float)motor->round_count * TWO_PI) / motor->gear_ratio;
     motor->base.speed_rad_s = sign * motor->velocity;
     motor->base.torque = sign * motor->torque_nm;
     motor->base.temperature = (float)event->data[7];
@@ -131,6 +140,10 @@ static void dm_run(void *argument, const uint8_t *message, uint16_t len)
         return;
     }
     memcpy(&event, message, sizeof event);
+    if (motor_candump_enabled())
+    {
+        LOGI("dm can%u %03X [%u]", (unsigned)event.bus + 1u, (unsigned)event.id, (unsigned)event.len);
+    }
     if (event.len < 8u)
     {
         return;
@@ -191,6 +204,7 @@ int32_t dm_motor_register(dm_motor_t *motor, const dm_motor_config_t *config)
     motor->kd = config->kd;
     motor->speed_limit = config->speed_limit;
     motor->current_limit = config->current_limit;
+    motor->gear_ratio = gear_ratio_of(config->type);
     motor_control_setup(&motor->base, config->control);
 
     int32_t add_ret = motor_registry_add(&motor->base);
@@ -247,10 +261,10 @@ static void set_hold(dm_motor_t *motor)
     motor->cmd_from_output = false;
 }
 
-/* 目标角度回绕到 [-pi, pi]（DM 输出位置限定在 ±pi），再换到电机方向 */
+/* 目标角度回绕到输出轴 [-pi, pi]，再乘减速比换成电机侧位置，并限制在映射范围里 */
 static float angle_target_to_motor(const dm_motor_t *motor)
 {
-    float target = pid_wrap_pi(motor->base.target);
+    float target = pid_wrap_pi(motor->base.target) * motor->gear_ratio;
     float sign = motor->base.reverse ? -1.0f : 1.0f;
 
     return sign * limit_value(target, -motor->p_max, motor->p_max);

@@ -23,7 +23,7 @@ static int32_t heater_ctrl_init(void)
     heater_ready = (ret == ERR_OK);
     if (!heater_ready)
     {
-        LOGE("heater", "init failed: %d", (int)ret);
+        LOGE("init failed: %d", (int)ret);
     }
     return ret;
 }
