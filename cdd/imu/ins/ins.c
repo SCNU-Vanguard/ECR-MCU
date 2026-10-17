@@ -10,11 +10,11 @@
 #include "component/common/initcall.h"
 #include "component/common/err.h"
 #include "component/log/log.h"
-#include "component/filter/ahrs.h"
+#include "component/ahrs/ahrs.h"
 #include "cdd/imu/bmi088/bmi088.h"
 #include "cdd/imu/ins/ins.h"
 
-/* 姿态解算算法（ahrs_algorithm_e）：AHRS_ALGORITHM_VQF / MEKF / MADGWICK / MAHONY / EKF。换算法就改这里，重新编译烧录 */
+/* 姿态解算算法（ahrs_algorithm_e）：AHRS_ALGORITHM_VQF / MEKF / MADGWICK / MAHONY。换算法就改这里，重新编译烧录 */
 #define INS_ALGORITHM               AHRS_ALGORITHM_VQF
 
 /* 加速度计样本比陀螺仪样本旧过这么多就认为过期，这一拍加速度计不参与校正（只用陀螺积分）：两个加速度计周期 + 1 ms */

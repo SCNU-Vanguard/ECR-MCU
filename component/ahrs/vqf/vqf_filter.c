@@ -13,7 +13,7 @@
  * 三维卡尔曼状态仅为机体系陀螺零偏；姿态不是这个卡尔曼滤波器的状态。
  * 无磁力计或外部航向观测，不能由重力恢复绝对 yaw。
  */
-#include "component/filter/vqf/vqf_filter.h"
+#include "component/ahrs/vqf/vqf_filter.h"
 #include <float.h>
 #include <math.h>
 #include <string.h>

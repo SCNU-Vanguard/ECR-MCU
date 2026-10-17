@@ -1,7 +1,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
-#include "component/filter/ahrs.h"
+#include "component/ahrs/ahrs.h"
 #include "component/common/err.h"
 
 
@@ -18,44 +18,32 @@
 #define AHRS_MAHONY_KP              1.0f
 #define AHRS_MAHONY_KI              0.002f
 
-/* EKF 参数：过程噪声(四元数)、过程噪声(零偏)、测量噪声、渐消因子、加速度低通。沿用原仓库 INS 中 EKF 的数值 */
-#define AHRS_KALMAN_PROCESS_NOISE_QUATERNION    10.5f
-#define AHRS_KALMAN_PROCESS_NOISE_BIAS          0.00015f
-#define AHRS_KALMAN_MEASURE_NOISE               1000000.0f
-#define AHRS_KALMAN_FADING_FACTOR               0.9998f
-#define AHRS_KALMAN_ACCEL_LPF                   0.0005f
-
 static const char *const algorithm_names[AHRS_ALGORITHM_COUNT] =
 {
     [AHRS_ALGORITHM_VQF]      = "vqf",
     [AHRS_ALGORITHM_MEKF]     = "mekf",
     [AHRS_ALGORITHM_MADGWICK] = "madgwick",
     [AHRS_ALGORITHM_MAHONY]   = "mahony",
-    [AHRS_ALGORITHM_EKF]      = "ekf",
 };
 
 bool ahrs_algorithm_enabled(ahrs_algorithm_e algorithm)
 {
     switch (algorithm)
     {
-#ifdef CONFIG_COMPONENT_FILTER_VQF
+#ifdef CONFIG_COMPONENT_AHRS_VQF
     case AHRS_ALGORITHM_VQF:
         return true;
 #endif
-#ifdef CONFIG_COMPONENT_FILTER_MEKF
+#ifdef CONFIG_COMPONENT_AHRS_MEKF
     case AHRS_ALGORITHM_MEKF:
         return true;
 #endif
-#ifdef CONFIG_COMPONENT_FILTER_MADGWICK
+#ifdef CONFIG_COMPONENT_AHRS_MADGWICK
     case AHRS_ALGORITHM_MADGWICK:
         return true;
 #endif
-#ifdef CONFIG_COMPONENT_FILTER_MAHONY
+#ifdef CONFIG_COMPONENT_AHRS_MAHONY
     case AHRS_ALGORITHM_MAHONY:
-        return true;
-#endif
-#ifdef CONFIG_COMPONENT_FILTER_EKF
-    case AHRS_ALGORITHM_EKF:
         return true;
 #endif
     default:
@@ -116,20 +104,20 @@ static int32_t algorithm_initialize(ahrs_t *ahrs, const float initial_quaternion
 {
     switch (ahrs->algorithm)
     {
-#ifdef CONFIG_COMPONENT_FILTER_VQF
+#ifdef CONFIG_COMPONENT_AHRS_VQF
     case AHRS_ALGORITHM_VQF:
         return VQF_Init(&ahrs->state.vqf, initial_quaternion, ahrs->nominal_dt_s) ? ERR_OK : ERR_FAIL;
 #endif
-#ifdef CONFIG_COMPONENT_FILTER_MEKF
+#ifdef CONFIG_COMPONENT_AHRS_MEKF
     case AHRS_ALGORITHM_MEKF:
         return MEKF_Init(&ahrs->state.mekf, initial_quaternion, NULL, NULL) ? ERR_OK : ERR_FAIL;
 #endif
-#ifdef CONFIG_COMPONENT_FILTER_MADGWICK
+#ifdef CONFIG_COMPONENT_AHRS_MADGWICK
     case AHRS_ALGORITHM_MADGWICK:
         MadgwickAHRSinit(initial_quaternion);
         return ERR_OK;
 #endif
-#ifdef CONFIG_COMPONENT_FILTER_MAHONY
+#ifdef CONFIG_COMPONENT_AHRS_MAHONY
     case AHRS_ALGORITHM_MAHONY:
         Mahony_Filter_Init(&ahrs->state.mahony, AHRS_MAHONY_KP, AHRS_MAHONY_KI, ahrs->nominal_dt_s);
         ahrs->state.mahony.q0 = initial_quaternion[0];
@@ -138,16 +126,6 @@ static int32_t algorithm_initialize(ahrs_t *ahrs, const float initial_quaternion
         ahrs->state.mahony.q3 = initial_quaternion[3];
         Mahony_Filter_RotationMatrix_Update(&ahrs->state.mahony);
         return ERR_OK;
-#endif
-#ifdef CONFIG_COMPONENT_FILTER_EKF
-    case AHRS_ALGORITHM_EKF:
-    {
-        float quaternion_copy[4] = { initial_quaternion[0], initial_quaternion[1], initial_quaternion[2], initial_quaternion[3] };
-
-        IMU_QuaternionEKF_Init(quaternion_copy, AHRS_KALMAN_PROCESS_NOISE_QUATERNION, AHRS_KALMAN_PROCESS_NOISE_BIAS,
-                               AHRS_KALMAN_MEASURE_NOISE, AHRS_KALMAN_FADING_FACTOR, AHRS_KALMAN_ACCEL_LPF);
-        return ERR_OK;
-    }
 #endif
     default:
         return ERR_NODEV;
@@ -245,7 +223,7 @@ int32_t ahrs_update(ahrs_t *ahrs, const ahrs_sample_t *sample)
 
     switch (ahrs->algorithm)
     {
-#ifdef CONFIG_COMPONENT_FILTER_VQF
+#ifdef CONFIG_COMPONENT_AHRS_VQF
     case AHRS_ALGORITHM_VQF:
     {
         uint8_t flags = (uint8_t)((sample->gyro_clipped ? VQF_GYRO_CLIPPED : 0u) | (sample->accel_clipped ? VQF_ACCEL_CLIPPED : 0u));
@@ -256,7 +234,7 @@ int32_t ahrs_update(ahrs_t *ahrs, const ahrs_sample_t *sample)
         break;
     }
 #endif
-#ifdef CONFIG_COMPONENT_FILTER_MEKF
+#ifdef CONFIG_COMPONENT_AHRS_MEKF
     case AHRS_ALGORITHM_MEKF:
     {
         uint8_t flags = (uint8_t)((sample->gyro_clipped ? MEKF_GYRO_CLIPPED : 0u) | (sample->accel_clipped ? MEKF_ACCEL_CLIPPED : 0u) |
@@ -268,14 +246,14 @@ int32_t ahrs_update(ahrs_t *ahrs, const ahrs_sample_t *sample)
         break;
     }
 #endif
-#ifdef CONFIG_COMPONENT_FILTER_MADGWICK
+#ifdef CONFIG_COMPONENT_AHRS_MADGWICK
     case AHRS_ALGORITHM_MADGWICK:
         MadgwickAHRSupdateIMUDt(gyro[0], gyro[1], gyro[2], accel[0], accel[1], accel[2], dt);
         MadgwickAHRSgetQuaternion(quaternion);
         predicted = true;
         break;
 #endif
-#ifdef CONFIG_COMPONENT_FILTER_MAHONY
+#ifdef CONFIG_COMPONENT_AHRS_MAHONY
     case AHRS_ALGORITHM_MAHONY:
     {
         axis_3f_t gyro_axes = { gyro[0], gyro[1], gyro[2] };
@@ -291,13 +269,6 @@ int32_t ahrs_update(ahrs_t *ahrs, const ahrs_sample_t *sample)
         predicted = true;
         break;
     }
-#endif
-#ifdef CONFIG_COMPONENT_FILTER_EKF
-    case AHRS_ALGORITHM_EKF:
-        IMU_QuaternionEKF_Update(gyro[0], gyro[1], gyro[2], accel[0], accel[1], accel[2], dt);
-        memcpy(quaternion, QEKF_INS.q, sizeof quaternion);
-        predicted = true;
-        break;
 #endif
     default:
         return ERR_NODEV;
@@ -327,7 +298,7 @@ void ahrs_break_continuity(ahrs_t *ahrs)
     {
         return;
     }
-#ifdef CONFIG_COMPONENT_FILTER_VQF
+#ifdef CONFIG_COMPONENT_AHRS_VQF
     if (ahrs->algorithm == AHRS_ALGORITHM_VQF)
     {
         VQF_BreakContinuity(&ahrs->state.vqf);

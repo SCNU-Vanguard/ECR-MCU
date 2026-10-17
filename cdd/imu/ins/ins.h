@@ -1,7 +1,7 @@
 #ifndef CDD_IMU_INS_H__
 #define CDD_IMU_INS_H__
 #include "component/common/types.h"
-#include "component/filter/ahrs.h"
+#include "component/ahrs/ahrs.h"
 
 /* 姿态输出，由 ins_task 在每个 IMU 样本之后更新；其他任务用 ins_get_attitude 读取一致的快照 */
 typedef struct

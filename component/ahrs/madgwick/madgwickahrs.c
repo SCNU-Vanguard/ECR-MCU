@@ -1,4 +1,4 @@
-#include "component/filter/madgwick/madgwickahrs.h"
+#include "component/ahrs/madgwick/madgwickahrs.h"
 
 #include <float.h>
 #include <math.h>

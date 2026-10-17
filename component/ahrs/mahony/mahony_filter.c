@@ -12,7 +12,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
-#include "component/filter/mahony/mahony_filter.h"
+#include "component/ahrs/mahony/mahony_filter.h"
 
 /*-----------------------MahonyAHRS滤波器----------------------*/
 /*-----------------------------------------------------------*/

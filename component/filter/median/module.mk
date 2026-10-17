@@ -1,0 +1,1 @@
+obj-$(CONFIG_COMPONENT_FILTER_MEDIAN) += median.o

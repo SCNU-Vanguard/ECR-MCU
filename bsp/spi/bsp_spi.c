@@ -100,19 +100,18 @@ int32_t bsp_spi_xfer_async(spi_id_e bus, gpio_id_e cs, const uint8_t *tx, uint8_
         return ERR_INVAL;                                   /* 缓冲区不在 DMA 能访问的内存里 */
     }
 
-    uint32_t irq_state = __get_PRIMASK();
+    uint32_t irq_key = os_irq_save();
 
-    __disable_irq();
     if (state->async_busy)
     {
-        __set_PRIMASK(irq_state);
+        os_irq_restore(irq_key);
         return ERR_BUSY;
     }
     state->async_busy = true;
     state->async_cs = cs;
     state->async_callback = done;
     state->async_context = context;
-    __set_PRIMASK(irq_state);
+    os_irq_restore(irq_key);
 
     if (cs != BSP_SPI_NO_CS)
     {

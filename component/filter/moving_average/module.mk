@@ -1,0 +1,1 @@
+obj-$(CONFIG_COMPONENT_FILTER_MOVING_AVERAGE) += moving_average.o

@@ -19,7 +19,7 @@
  * NIST: https://www.nist.gov/programs-projects/uncertainty-analysis-autocorrelated-measurement-data
  * ADI: https://www.analog.com/en/resources/app-notes/an-1042.html
  */
-#include "component/filter/mekf/imu_yaw_calibration.h"
+#include "component/ahrs/mekf/imu_yaw_calibration.h"
 #include <math.h>
 #include <string.h>
 

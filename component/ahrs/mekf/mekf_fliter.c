@@ -70,7 +70,7 @@
  * 工程实现对照：ethz-asl/ethzasl_msf（Joseph 更新和对称化），
  * hobbeshunter/IMU_EKF（状态/单位不同，未复制源码）。
  */
-#include "component/filter/mekf/mekf_fliter.h"
+#include "component/ahrs/mekf/mekf_fliter.h"
 
 #include <math.h>
 #include <stddef.h>

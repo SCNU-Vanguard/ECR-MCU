@@ -4,6 +4,7 @@
 #include "bsp/spi/bsp_spi.h"
 #include "bsp/gpio/bsp_gpio.h"
 #include "bsp/tick/bsp_tick.h"
+#include "osal/osal.h"
 #include "component/common/initcall.h"
 #include "component/common/err.h"
 #include "component/log/log.h"
@@ -193,7 +194,7 @@ static int32_t gyro_write(uint8_t reg, uint8_t value)
     return bsp_spi_xfer(SPI_IMU, GPIO_GYRO_CS, tx_data, NULL, 2);
 }
 
-/* 写一张配置表并回读校验。初始化阶段调度器还没启动：延时用 HAL_Delay（基于 TIM7 时基），不能用 vTaskDelay */
+/* 写一张配置表并回读校验。初始化阶段调度器还没启动，延时走 bsp_delay_ms，不能用 vTaskDelay */
 static int32_t apply_settings(const char *chip_name, const register_setting_t *settings, size_t count, bool is_accel)
 {
     for (size_t setting_index = 0; setting_index < count; setting_index++)
@@ -202,7 +203,7 @@ static int32_t apply_settings(const char *chip_name, const register_setting_t *s
         int32_t write_result = is_accel ? accel_write(settings[setting_index].reg, settings[setting_index].value)
                                         : gyro_write(settings[setting_index].reg, settings[setting_index].value);
 
-        HAL_Delay(1);
+        bsp_delay_ms(1);
         int32_t read_result = is_accel ? accel_read(settings[setting_index].reg, &read_back, 1)
                                        : gyro_read(settings[setting_index].reg, &read_back, 1);
 
@@ -214,7 +215,7 @@ static int32_t apply_settings(const char *chip_name, const register_setting_t *s
         }
         if (is_accel && settings[setting_index].reg == ACCEL_PWR_CTRL)
         {
-            HAL_Delay(50);                                  /* 打开加速度计后需要等启动完成 */
+            bsp_delay_ms(50);                               /* 打开加速度计后需要等启动完成 */
         }
     }
     return ERR_OK;
@@ -235,7 +236,7 @@ static int32_t bmi088_init(void)
 
     (void)accel_read(ACCEL_CHIP_ID, &chip_id, 1);               /* 空读：切到 SPI 模式 */
     (void)accel_write(ACCEL_SOFTRESET, SOFTRESET_CMD);
-    HAL_Delay(2);
+    bsp_delay_ms(2);
     (void)accel_read(ACCEL_CHIP_ID, &chip_id, 1);               /* 复位后再空读一次 */
     if (accel_read(ACCEL_CHIP_ID, &chip_id, 1) != ERR_OK || chip_id != ACCEL_CHIP_ID_VALUE)
     {
@@ -243,7 +244,7 @@ static int32_t bmi088_init(void)
         return ERR_NODEV;
     }
     (void)gyro_write(GYRO_SOFTRESET, SOFTRESET_CMD);
-    HAL_Delay(35);
+    bsp_delay_ms(35);
     if (gyro_read(GYRO_CHIP_ID, &chip_id, 1) != ERR_OK || chip_id != GYRO_CHIP_ID_VALUE)
     {
         LOGW("bmi088", "gyro id=0x%02X (want 0x0F)", chip_id);
@@ -298,11 +299,10 @@ void bmi088_set_frame_callback(bmi088_frame_callback_t callback, void *context)
 
 void bmi088_get_stats(bmi088_stats_t *stats)
 {
-    uint32_t irq_state = __get_PRIMASK();
+    uint32_t irq_key = os_irq_save();
 
-    __disable_irq();
     *stats = driver.stats;
-    __set_PRIMASK(irq_state);
+    os_irq_restore(irq_key);
 }
 
 /* ===== 以下函数都在中断里运行（DRDY 中断、SPI DMA 完成中断；它们在同一个中断优先级，互不抢占）===== */
@@ -492,9 +492,8 @@ int32_t bmi088_recover(void)
     driver.running = false;
     (void)bsp_spi_abort(SPI_IMU);                           /* 此后不会再有完成回调，inflight 由下面清掉 */
 
-    uint32_t irq_state = __get_PRIMASK();
+    uint32_t irq_key = os_irq_save();
 
-    __disable_irq();
     driver.inflight = READ_NONE;
     driver.stats.recover_count++;
     driver.gyro_drdy_us = (uint32_t)bsp_tick_us();
@@ -503,6 +502,6 @@ int32_t bmi088_recover(void)
     driver.accel_pending = true;
     driver.running = true;
     kick();
-    __set_PRIMASK(irq_state);
+    os_irq_restore(irq_key);
     return ERR_OK;
 }

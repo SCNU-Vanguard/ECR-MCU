@@ -71,6 +71,11 @@ uint32_t bsp_tick_ms(void)
     return HAL_GetTick();
 }
 
+void bsp_delay_ms(uint32_t delay_ms)
+{
+    HAL_Delay(delay_ms);
+}
+
 uint64_t bsp_tick_us(void)
 {
     uint32_t irq_state = __get_PRIMASK();
