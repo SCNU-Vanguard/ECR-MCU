@@ -41,6 +41,8 @@
 /* DM3519 说明书：齿轮减速比 3591/187（约 1:19.2）。位置在电机侧，速度和转矩在输出轴 */
 #define DM3519_GEAR_RATIO     (3591.0f / 187.0f)
 
+static bool dm_dump_enabled;
+
 static bool is_dm_type(motor_type_e type)
 {
     return type == MOTOR_TYPE_DM4310 || type == MOTOR_TYPE_DM8009P || type == MOTOR_TYPE_DM3519;
@@ -140,7 +142,7 @@ static void dm_run(void *argument, const uint8_t *message, uint16_t len)
         return;
     }
     memcpy(&event, message, sizeof event);
-    if (motor_candump_enabled())
+    if (dm_dump_enabled)
     {
         LOGI("dm can%u %03X [%u]", (unsigned)event.bus + 1u, (unsigned)event.id, (unsigned)event.len);
     }
@@ -490,3 +492,32 @@ int32_t dm_motor_send_bus(can_id_e bus)
     }
     return sent_count;
 }
+
+#ifdef CONFIG_COMPONENT_SHELL
+#include "component/shell/shell_cmd.h"
+
+static int shell_dm_motor_dump(int argc, char *argv[])
+{
+    if (argc == 1)
+    {
+        shell_out("dm_motor_dump %s\r\n", dm_dump_enabled ? "on" : "off");
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "on") == 0)
+    {
+        dm_dump_enabled = true;
+    }
+    else if (argc == 2 && strcmp(argv[1], "off") == 0)
+    {
+        dm_dump_enabled = false;
+    }
+    else
+    {
+        shell_out("usage: dm_motor_dump [on|off]\r\n");
+        return -1;
+    }
+    shell_out("dm_motor_dump %s\r\n", dm_dump_enabled ? "on" : "off");
+    return 0;
+}
+SHELL_CMD(dm_motor_dump, shell_dm_motor_dump, print_each_received_dm_can_frame)
+#endif

@@ -4,12 +4,14 @@
 #include "osal/event.h"
 #include "component/common/initcall.h"
 #include "component/common/err.h"
+#include "component/log/log.h"
 
 #define DT7_FRAME_LEN   18u
 #define DT7_CHANNEL_MIN      364
 #define DT7_CHANNEL_MID      1024
 #define DT7_CHANNEL_MAX      1684
 static dt7_data_t current_data;         /* 只在 dt7_task 里写，别的任务用 dt7_get() 取快照 */
+static bool       dt7_dump_enabled;
 
 static bool channel_valid(int value)
 {
@@ -79,6 +81,12 @@ static void dt7_run(void *argument, const uint8_t *data, uint16_t len)
 
         current_data = new_data;
         os_irq_restore(irq_key);
+        if (dt7_dump_enabled)
+        {
+            LOGI("dt7 ch=%d %d %d %d wheel=%d sw=%u %u",
+                 (int)new_data.channel[0], (int)new_data.channel[1], (int)new_data.channel[2], (int)new_data.channel[3],
+                 (int)new_data.wheel, (unsigned)new_data.switch_left, (unsigned)new_data.switch_right);
+        }
     }
     else
     {
@@ -99,7 +107,36 @@ void dt7_get(dt7_data_t *out)
 static int32_t dt7_init(void)
 {
     memset(&current_data, 0, sizeof current_data);
-    bsp_uart_bind_event(UART_DBUS, &dt7_task);
+    bsp_uart_bind_event(UART_REMOTE, &dt7_task);
     return ERR_OK;
 }
 INIT_CDD_STAGE1(dt7_init);
+
+#ifdef CONFIG_COMPONENT_SHELL
+#include "component/shell/shell_cmd.h"
+
+static int shell_dt7_dump(int argc, char *argv[])
+{
+    if (argc == 1)
+    {
+        shell_out("dt7_dump %s\r\n", dt7_dump_enabled ? "on" : "off");
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "on") == 0)
+    {
+        dt7_dump_enabled = true;
+    }
+    else if (argc == 2 && strcmp(argv[1], "off") == 0)
+    {
+        dt7_dump_enabled = false;
+    }
+    else
+    {
+        shell_out("usage: dt7_dump [on|off]\r\n");
+        return -1;
+    }
+    shell_out("dt7_dump %s\r\n", dt7_dump_enabled ? "on" : "off");
+    return 0;
+}
+SHELL_CMD(dt7_dump, shell_dt7_dump, print_dt7_sticks_wheel_and_switches)
+#endif

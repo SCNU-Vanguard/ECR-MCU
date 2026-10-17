@@ -6,17 +6,6 @@
 
 static motor_t *registered_motors[MOTOR_MAX_COUNT];
 static uint8_t  registered_count;
-static bool     candump_enabled;
-
-bool motor_candump_enabled(void)
-{
-    return candump_enabled;
-}
-
-void motor_candump_set(bool enabled)
-{
-    candump_enabled = enabled;
-}
 
 int32_t motor_registry_add(motor_t *motor)
 {

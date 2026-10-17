@@ -17,7 +17,7 @@
  * 模式在控制表里写死：SPEED 只用速度环，ANGLE 是角度环串速度环，TORQUE 两个环都不跑。
  * 角度环单位 rad -> rad/s，位置式；速度环 DJI 是 rad/s -> 电流/电压原始值，DM 是 rad/s -> 转矩 N·m，增量式。
  * 只用速度环时角度环填 0。反馈默认 MOTOR_FEEDBACK_OWN，前馈默认 MOTOR_FEEDFORWARD_ZERO。
- * 这些是没有实测过的保守初值，现场用 shell 的 xxx_pid 命令调。
+ * 这些是没有实测过的保守初值。
  * DM 的 p_max / v_max / t_max 必须和上位机 PMAX / VMAX / TMAX 一致，否则反馈和控制帧都会编解码错。
  * 3519：1000 / 40 / 10。4310：3.14 / 30 / 10。3519 的位置映射是电机侧，速度和转矩是输出轴。 */
 #include "bsp/include/bsp_ids.h"

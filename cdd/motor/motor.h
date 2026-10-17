@@ -145,8 +145,4 @@ int32_t motor_compute(motor_t *motor);              /* 成功 ERR_OK；电机类
 int32_t motor_compute_bus(can_id_e bus);            /* 返回计算了几个电机；总线号非法返回 ERR_INVAL */
 int32_t motor_send_bus(can_id_e bus);               /* 返回发出的帧数；总线号非法返回 ERR_INVAL */
 
-/* candump：打开后 DJI/DM 接收任务每收到一帧打一行总线、ID、长度。默认关 */
-bool motor_candump_enabled(void);
-void motor_candump_set(bool enabled);
-
 #endif

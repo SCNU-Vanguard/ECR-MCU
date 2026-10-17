@@ -33,6 +33,7 @@ static const uint16_t tx_ids[TX_FRAME_COUNT] = { 0x200, 0x1FF, 0x2FF, 0x1FE, 0x2
 #define LIMIT_GM6020_CURR   16384.0f
 
 static bool subscribed[CAN_NUM];
+static bool dji_dump_enabled;
 
 static bool is_dji_type(motor_type_e type)
 {
@@ -155,7 +156,7 @@ static void dji_run(void *argument, const uint8_t *message, uint16_t len)
         return;
     }
     memcpy(&event, message, sizeof event);
-    if (motor_candump_enabled())
+    if (dji_dump_enabled)
     {
         LOGI("dji can%u %03X [%u]", (unsigned)event.bus + 1u, (unsigned)event.id, (unsigned)event.len);
     }
@@ -376,3 +377,32 @@ int32_t dji_motor_send_bus(can_id_e bus)
     }
     return sent_count;
 }
+
+#ifdef CONFIG_COMPONENT_SHELL
+#include "component/shell/shell_cmd.h"
+
+static int shell_dji_motor_dump(int argc, char *argv[])
+{
+    if (argc == 1)
+    {
+        shell_out("dji_motor_dump %s\r\n", dji_dump_enabled ? "on" : "off");
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "on") == 0)
+    {
+        dji_dump_enabled = true;
+    }
+    else if (argc == 2 && strcmp(argv[1], "off") == 0)
+    {
+        dji_dump_enabled = false;
+    }
+    else
+    {
+        shell_out("usage: dji_motor_dump [on|off]\r\n");
+        return -1;
+    }
+    shell_out("dji_motor_dump %s\r\n", dji_dump_enabled ? "on" : "off");
+    return 0;
+}
+SHELL_CMD(dji_motor_dump, shell_dji_motor_dump, print_each_received_dji_can_frame)
+#endif
