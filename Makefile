@@ -1,12 +1,18 @@
 # ecr-mcu 顶层入口。用法：
-#   make p=h7 r=demo                       # p = 平台，r = 机器人（兵种）
-#   make p=h7 r=demo OPT=-O2 V=1           # 发布优化 / 显示完整命令
+#   make p=h7 r=demo                       # p = 平台，r = 机器人（兵种）。默认 -O3，按 CPU 核数并行
+#   make p=h7 r=demo OPT=-Og V=1           # 临时改优化级别 / 显示完整命令
 #   make p=h7 r=demo clean
 #   make                                        # 等价于 make p=h7 r=demo
 # 配置文件：robot/<r>/<r>.config（CONFIG_XXX = y | n），与平台无关
 # 产物：output/<r>_<p>/<r>_<p>.{elf,bin,hex,map}
 
 TOP := $(CURDIR)
+
+# 命令行没写 -j 时，按核数并行。写了 -j 就沿用命令行的。
+ifeq ($(filter -j% --jobserver-auth% jobserver,$(MAKEFLAGS)),)
+NPROC := $(shell nproc 2>/dev/null || echo 8)
+MAKEFLAGS += -j$(NPROC)
+endif
 
 p ?= h7
 r ?= demo
