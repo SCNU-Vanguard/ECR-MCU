@@ -1095,62 +1095,6 @@ int shellGetVarValue(Shell *shell, ShellCommand *command)
 
 
 /**
- * @brief shell设置变量值
- * 
- * @param shell shell对象
- * @param command 命令
- * @param value 值
- * @return int 返回变量值
- */
-int shellSetVarValue(Shell *shell, ShellCommand *command, int value)
-{
-    if (command->attr.attrs.readOnly)
-    {
-        shellWriteString(shell, shellText[SHELL_TEXT_VAR_READ_ONLY_CANNOT_MODIFY]);
-    }
-    else
-    {
-        switch (command->attr.attrs.type)
-        {
-        case SHELL_TYPE_VAR_INT:
-            *((int *)(command->data.var.value)) = value;
-            break;
-        case SHELL_TYPE_VAR_SHORT:
-            *((short *)(command->data.var.value)) = value;
-            break;
-        case SHELL_TYPE_VAR_CHAR:
-            *((char *)(command->data.var.value)) = value;
-            break;
-        case SHELL_TYPE_VAR_STRING:
-            shellStringCopy(((char *)(command->data.var.value)), (char *) (size_t) value);
-            break;
-        case SHELL_TYPE_VAR_POINT:
-            shellWriteString(shell, shellText[SHELL_TEXT_POINT_CANNOT_MODIFY]);
-            break;
-        case SHELL_TYPE_VAR_NODE:
-            if (((ShellNodeVarAttr *)command->data.var.value)->set)
-            {
-                if (((ShellNodeVarAttr *)command->data.var.value)->var)
-                {
-                    int (*func)(void *, int) = ((ShellNodeVarAttr *)command->data.var.value)->set;
-                    func(((ShellNodeVarAttr *)command->data.var.value)->var, value);
-                }
-                else
-                {
-                    int (*func)(int) = ((ShellNodeVarAttr *)command->data.var.value)->set;
-                    func(value);
-                }
-            }
-            break;
-        default:
-            break;
-        }
-    }
-    return shellShowVar(shell, command);
-}
-
-
-/**
  * @brief shell变量输出
  * 
  * @param shell shell对象
@@ -1191,43 +1135,6 @@ static int shellShowVar(Shell *shell, ShellCommand *command)
     shellWriteString(shell, "\r\n");
     return value;
 }
-
-
-/**
- * @brief shell设置变量
- * 
- * @param name 变量名
- * @param value 变量值
- * @return int 返回变量值
- */
-int shellSetVar(char *name, int value)
-{
-    Shell *shell = shellGetCurrent();
-    if (shell == NULL)
-    {
-        return 0;
-    }
-    ShellCommand *command = shellSeekCommand(shell,
-                                             name,
-                                             shell->commandList.base,
-                                             0);
-    if (!command)
-    {
-        shellWriteString(shell, shellText[SHELL_TEXT_VAR_NOT_FOUND]);
-        return 0;
-    }
-    if (command->attr.attrs.type < SHELL_TYPE_VAR_INT
-        || command->attr.attrs.type > SHELL_TYPE_VAR_NODE)
-    {
-        shellWriteString(shell, name);
-        shellWriteString(shell, shellText[SHELL_TEXT_NOT_VAR]);
-        return 0;
-    }
-    return shellSetVarValue(shell, command, value);
-}
-SHELL_EXPORT_CMD(
-SHELL_CMD_PERMISSION(0)|SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC)|SHELL_CMD_DISABLE_RETURN,
-setVar, shellSetVar, set var);
 
 
 /**
@@ -1893,70 +1800,6 @@ void shellTask(void *param)
     }
 #endif
 }
-
-
-/**
- * @brief shell 输出用户列表(shell调用)
- */
-void shellUsers(void)
-{
-    Shell *shell = shellGetCurrent();
-    if (shell)
-    {
-        shellListUser(shell);
-    }
-}
-SHELL_EXPORT_CMD(
-SHELL_CMD_PERMISSION(0)|SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC)|SHELL_CMD_DISABLE_RETURN,
-users, shellUsers, list all user);
-
-
-/**
- * @brief shell 输出命令列表(shell调用)
- */
-void shellCmds(void)
-{
-    Shell *shell = shellGetCurrent();
-    if (shell)
-    {
-        shellListCommand(shell);
-    }
-}
-SHELL_EXPORT_CMD(
-SHELL_CMD_PERMISSION(0)|SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC)|SHELL_CMD_DISABLE_RETURN,
-cmds, shellCmds, list all cmd);
-
-
-/**
- * @brief shell 输出变量列表(shell调用)
- */
-void shellVars(void)
-{
-    Shell *shell = shellGetCurrent();
-    if (shell)
-    {
-        shellListVar(shell);
-    }
-}
-SHELL_EXPORT_CMD(
-SHELL_CMD_PERMISSION(0)|SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC)|SHELL_CMD_DISABLE_RETURN,
-vars, shellVars, list all var);
-
-
-/**
- * @brief shell 输出按键列表(shell调用)
- */
-void shellKeys(void)
-{
-    Shell *shell = shellGetCurrent();
-    if (shell)
-    {
-        shellListKey(shell);
-    }
-}
-SHELL_EXPORT_CMD(
-SHELL_CMD_PERMISSION(0)|SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC)|SHELL_CMD_DISABLE_RETURN,
-keys, shellKeys, list all key);
 
 
 /**

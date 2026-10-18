@@ -13,7 +13,6 @@
 
 #if SHELL_USING_CMD_EXPORT != 1
 
-extern int shellSetVar(char *name, int value);
 extern void shellUp(Shell *shell);
 extern void shellDown(Shell *shell);
 extern void shellRight(Shell *shell);
@@ -23,10 +22,6 @@ extern void shellBackspace(Shell *shell);
 extern void shellDelete(Shell *shell);
 extern void shellEnter(Shell *shell);
 extern void shellHelp(int argc, char *argv[]);
-extern void shellUsers(void);
-extern void shellCmds(void);
-extern void shellVars(void);
-extern void shellKeys(void);
 extern void shellClear(void);
 #if SHELL_EXEC_UNDEF_FUNC == 1
 extern int shellExecute(int argc, char *argv[]);
@@ -45,8 +40,6 @@ const ShellCommand shellCommandList[] =
     .data.user.name = SHELL_DEFAULT_USER,
     .data.user.password = SHELL_DEFAULT_USER_PASSWORD,
     .data.user.desc = "default user"},
-    SHELL_CMD_ITEM(SHELL_CMD_PERMISSION(0)|SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
-                   setVar, shellSetVar, set var),
     SHELL_KEY_ITEM(SHELL_CMD_PERMISSION(0), 0x1B5B4100, shellUp, up),
     SHELL_KEY_ITEM(SHELL_CMD_PERMISSION(0), 0x1B5B4200, shellDown, down),
     SHELL_KEY_ITEM(SHELL_CMD_PERMISSION(0)|SHELL_CMD_ENABLE_UNCHECKED,
@@ -74,14 +67,6 @@ const ShellCommand shellCommandList[] =
 #endif
     SHELL_CMD_ITEM(SHELL_CMD_PERMISSION(0)|SHELL_CMD_TYPE(SHELL_TYPE_CMD_MAIN)|SHELL_CMD_DISABLE_RETURN,
                    help, shellHelp, show command info\r\nhelp [cmd]),
-    SHELL_CMD_ITEM(SHELL_CMD_PERMISSION(0)|SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC)|SHELL_CMD_DISABLE_RETURN,
-                   users, shellUsers, list all user),
-    SHELL_CMD_ITEM(SHELL_CMD_PERMISSION(0)|SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC)|SHELL_CMD_DISABLE_RETURN,
-                   cmds, shellCmds, list all cmd),
-    SHELL_CMD_ITEM(SHELL_CMD_PERMISSION(0)|SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC)|SHELL_CMD_DISABLE_RETURN,
-                   vars, shellVars, list all var),
-    SHELL_CMD_ITEM(SHELL_CMD_PERMISSION(0)|SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC)|SHELL_CMD_DISABLE_RETURN,
-                   keys, shellKeys, list all key),
     SHELL_CMD_ITEM(SHELL_CMD_PERMISSION(0)|SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC)|SHELL_CMD_DISABLE_RETURN,
                    clear, shellClear, clear console),
     SHELL_CMD_ITEM(SHELL_CMD_PERMISSION(0)|SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC)|SHELL_CMD_DISABLE_RETURN,

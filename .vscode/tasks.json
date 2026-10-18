@@ -6,14 +6,16 @@
   "tasks": [
     {
       "label": "build demo_h7",
-      "type": "shell",
-      "command": "make p=h7 r=demo",
+      "type": "process",
+      "command": "make",
+      "args": ["p=h7", "r=demo"],
       "group": "build"
     },
     {
       "label": "flash demo_h7",
-      "type": "shell",
-      "command": "make p=h7 r=demo flash"
+      "type": "process",
+      "command": "make",
+      "args": ["p=h7", "r=demo", "flash"]
     }
   ]
 }
