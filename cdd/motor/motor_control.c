@@ -1,7 +1,7 @@
 #include "cdd/motor/motor.h"
 #include "component/common/err.h"
 
-/* 按总线计算/发送的分发：按电机型号交给 DJI / DM 驱动。放在单独的文件里，是因为它要同时依赖 DJI 和 DM 驱动，
+/* 按总线计算/发送的分发：按电机型号交给 dji_motor / dm_motor。放在单独的文件里，是因为它要同时依赖这两个驱动，
  * 而这两个驱动又依赖 motor.c。各厂家用 CONFIG_CDD_MOTOR_xxx 开关，关掉的厂家不参与。 */
 #ifdef CONFIG_CDD_MOTOR_DJI_MOTOR
 #include "cdd/motor/dji_motor/dji_motor.h"
@@ -26,9 +26,9 @@ int32_t motor_compute(motor_t *motor)
             return ERR_OK;
 #endif
 #ifdef CONFIG_CDD_MOTOR_DM_MOTOR
-        case MOTOR_TYPE_DM4310:
-        case MOTOR_TYPE_DM8009P:
-        case MOTOR_TYPE_DM3519:
+        case MOTOR_TYPE_J4310:
+        case MOTOR_TYPE_J8009P:
+        case MOTOR_TYPE_S3519:
             dm_motor_compute((dm_motor_t *)motor);
             return ERR_OK;
 #endif

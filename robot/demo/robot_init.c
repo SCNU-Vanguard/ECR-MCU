@@ -1,14 +1,14 @@
-#include "robot/demo/robot_cfg.h"
+#include "robot/demo/robot_config.h"
 #include "component/common/initcall.h"
 #include "component/common/err.h"
 #include "component/log/log.h"
 
-/* 电机绑定：按 robot_cfg.h 里的表，为每个电机定义变量并绑定到 CAN 总线。
+/* 电机绑定：按 robot_config.h 里的表，为每个电机定义变量并绑定到 CAN 总线。
  * 这里只做注册和绑定，不关心电机属于哪个功能模块。 */
 
 #ifdef CONFIG_CDD_MOTOR_DJI_MOTOR
-/* 控制配置由 robot_cfg.h 的控制表展开。模式在表里写死。 */
-#define ROBOT_DJI_CONTROL(_name, _mode, _akp, _aki, _akd, _akf, _aout, _aint, _aff, _adb, \
+/* 控制配置由 robot_config.h 的控制表展开。模式在表里写死。 */
+#define ROBOT_DJI_MOTOR_CONTROL(_name, _mode, _akp, _aki, _akd, _akf, _aout, _aint, _aff, _adb, \
                           _skp, _ski, _skd, _skf, _sout, _sint, _sff, _sdb, _afb, _sfb, _sffwd, _tffwd) \
     static const motor_control_config_t _name##_control =                                                  \
     {                                                                                                      \
@@ -17,10 +17,10 @@
         .speed_pid = { _skp, _ski, _skd, _skf, _sout, _sint, _sff, _sdb },                                 \
         .signals = { _afb, _sfb, _sffwd, _tffwd },                                                         \
     };
-ROBOT_DJI_CONTROL_TABLE(ROBOT_DJI_CONTROL)
-#undef ROBOT_DJI_CONTROL
+ROBOT_DJI_MOTOR_CONTROL_TABLE(ROBOT_DJI_MOTOR_CONTROL)
+#undef ROBOT_DJI_MOTOR_CONTROL
 #define ROBOT_DEFINE_DJI_MOTOR(_name, ...)    dji_motor_t _name;
-ROBOT_DJI_MOTOR_TABLE(ROBOT_DEFINE_DJI_MOTOR)
+ROBOT_DJI_MOTOR_CONFIG_TABLE(ROBOT_DEFINE_DJI_MOTOR)
 
 __attribute__((unused))
 static int32_t bind_dji_motor(const char *name, dji_motor_t *motor, const dji_motor_config_t *config)
@@ -57,7 +57,7 @@ static int32_t bind_dji_motor(const char *name, dji_motor_t *motor, const dji_mo
 #endif
 
 #ifdef CONFIG_CDD_MOTOR_DM_MOTOR
-#define ROBOT_DM_CONTROL(_name, _mode, _akp, _aki, _akd, _akf, _aout, _aint, _aff, _adb, \
+#define ROBOT_DM_MOTOR_CONTROL(_name, _mode, _akp, _aki, _akd, _akf, _aout, _aint, _aff, _adb, \
                          _skp, _ski, _skd, _skf, _sout, _sint, _sff, _sdb, _afb, _sfb, _sffwd, _tffwd) \
     static const motor_control_config_t _name##_control =                                                 \
     {                                                                                                     \
@@ -66,10 +66,10 @@ static int32_t bind_dji_motor(const char *name, dji_motor_t *motor, const dji_mo
         .speed_pid = { _skp, _ski, _skd, _skf, _sout, _sint, _sff, _sdb },                                \
         .signals = { _afb, _sfb, _sffwd, _tffwd },                                                        \
     };
-ROBOT_DM_CONTROL_TABLE(ROBOT_DM_CONTROL)
-#undef ROBOT_DM_CONTROL
+ROBOT_DM_MOTOR_CONTROL_TABLE(ROBOT_DM_MOTOR_CONTROL)
+#undef ROBOT_DM_MOTOR_CONTROL
 #define ROBOT_DEFINE_DM_MOTOR(_name, ...)     dm_motor_t _name;
-ROBOT_DM_MOTOR_TABLE(ROBOT_DEFINE_DM_MOTOR)
+ROBOT_DM_MOTOR_CONFIG_TABLE(ROBOT_DEFINE_DM_MOTOR)
 
 __attribute__((unused))
 static int32_t bind_dm_motor(const char *name, dm_motor_t *motor, const dm_motor_config_t *config)
@@ -83,7 +83,7 @@ static int32_t bind_dm_motor(const char *name, dm_motor_t *motor, const dm_motor
     return register_ret;
 }
 
-#define ROBOT_BIND_DM_MOTOR(_name, _bus, _type, _tx_id, _master_id, _mode, _reverse, _p_max, _v_max, _t_max, _timeout_ms, _mit_style, _kp, _kd, _speed_limit, _current_limit, _control)    \
+#define ROBOT_BIND_DM_MOTOR(_name, _bus, _type, _tx_id, _master_id, _mode, _reverse, _p_max, _v_max, _t_max, _timeout_ms, _kp, _kd, _speed_limit, _current_limit, _control)    \
     {                                                                                            \
         const dm_motor_config_t config =                                                         \
         {                                                                                        \
@@ -97,7 +97,6 @@ static int32_t bind_dm_motor(const char *name, dm_motor_t *motor, const dm_motor
             .v_max      = (_v_max),                                                              \
             .t_max      = (_t_max),                                                              \
             .timeout_ms = (_timeout_ms),                                                         \
-            .mit_style  = (_mit_style),                                                          \
             .kp         = (_kp),                                                                 \
             .kd         = (_kd),                                                                 \
             .speed_limit   = (_speed_limit),                                                     \
@@ -118,10 +117,10 @@ static int32_t robot_bind_motors(void)
     int32_t register_ret = ERR_OK;
 
 #ifdef CONFIG_CDD_MOTOR_DJI_MOTOR
-    ROBOT_DJI_MOTOR_TABLE(ROBOT_BIND_DJI_MOTOR)
+    ROBOT_DJI_MOTOR_CONFIG_TABLE(ROBOT_BIND_DJI_MOTOR)
 #endif
 #ifdef CONFIG_CDD_MOTOR_DM_MOTOR
-    ROBOT_DM_MOTOR_TABLE(ROBOT_BIND_DM_MOTOR)
+    ROBOT_DM_MOTOR_CONFIG_TABLE(ROBOT_BIND_DM_MOTOR)
 #endif
     return register_ret;
 }

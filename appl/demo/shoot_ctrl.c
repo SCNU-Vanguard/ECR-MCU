@@ -4,7 +4,7 @@
 #include "osal/period.h"
 #include "component/common/initcall.h"
 #include "component/common/err.h"
-#include "robot/demo/robot_cfg.h"
+#include "robot/demo/robot_config.h"
 
 static int32_t shoot_ctrl_init(void)
 {
@@ -12,14 +12,14 @@ static int32_t shoot_ctrl_init(void)
 
     motor_set_active(&shoot_m3508.base, true);
     motor_set_active(&shoot_gm6020.base, true);
-    motor_set_active(&shoot_dm3519.base, true);
-    motor_set_active(&shoot_dm4310.base, true);
-    first_error = dm_motor_enable(&shoot_dm3519);
+    motor_set_active(&shoot_s3519.base, true);
+    motor_set_active(&shoot_j4310.base, true);
+    first_error = dm_motor_enable(&shoot_s3519);
     if (first_error != ERR_OK)
     {
         return first_error;
     }
-    return dm_motor_enable(&shoot_dm4310);
+    return dm_motor_enable(&shoot_j4310);
 }
 INIT_APP_STAGE2(shoot_ctrl_init);
 

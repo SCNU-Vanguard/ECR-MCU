@@ -7,7 +7,7 @@
 #include "osal/osal.h"
 #include "osal/event.h"
 
-/* DJI 协议（依据 C620 / GM6020 官方说明书，与 2026 步兵、标准机器人的报文一致）：
+/* dji_motor 协议（依据 C620 / gm6020 官方说明书，与 2026 步兵、标准机器人的报文一致）：
  *   反馈帧 ID：M3508/M2006 = 0x200 + id；GM6020 = 0x204 + id；8 字节，大端：
  *              转子角度(2, 0..8191) 转速rpm(2) 电流/转矩(2) 温度(1) 保留(1)
  *   控制帧：   4 个 int16 大端，对应帧内 4 个电机位置：
@@ -33,9 +33,9 @@ static const uint16_t tx_ids[TX_FRAME_COUNT] = { 0x200, 0x1FF, 0x2FF, 0x1FE, 0x2
 #define LIMIT_GM6020_CURR   16384.0f
 
 static bool subscribed[CAN_NUM];
-static bool dji_dump_enabled;
+static bool dji_motor_dump_enabled;
 
-static bool is_dji_type(motor_type_e type)
+static bool is_dji_motor_type(motor_type_e type)
 {
     return type == MOTOR_TYPE_M3508 || type == MOTOR_TYPE_M2006 || type == MOTOR_TYPE_GM6020;
 }
@@ -46,7 +46,7 @@ static uint16_t feedback_id_of(motor_type_e type, uint8_t id)
 }
 
 /* 控制帧：返回 tx_ids 下标，*slot = 帧内位置 0..3；非法返回 -1 */
-static int tx_slot(motor_type_e type, dji_gm6020_mode_e gm6020_mode, uint8_t id, uint8_t *slot)
+static int tx_slot(motor_type_e type, gm6020_motor_mode_e gm6020_mode, uint8_t id, uint8_t *slot)
 {
     if (id == 0u)
     {
@@ -54,18 +54,18 @@ static int tx_slot(motor_type_e type, dji_gm6020_mode_e gm6020_mode, uint8_t id,
     }
     if (type == MOTOR_TYPE_GM6020)
     {
-        if (id > 7u)
+        if (id > 7u || gm6020_mode == GM6020_MOTOR_UNFIT)
         {
             return -1;
         }
         *slot = (uint8_t)((id - 1u) & 3u);
-        if (gm6020_mode == DJI_GM6020_CURRENT)
+        if (gm6020_mode == GM6020_MOTOR_CURRENT)
         {
             return (id <= 4u) ? 3 : 4;
         }
         return (id <= 4u) ? 1 : 2;
     }
-    if (id > 8u)
+    if (id > 8u || gm6020_mode != GM6020_MOTOR_UNFIT)
     {
         return -1;
     }
@@ -78,7 +78,7 @@ static float output_limit_of(const dji_motor_t *motor)
     switch (motor->base.type)
     {
         case MOTOR_TYPE_GM6020:
-            return (motor->gm6020_mode == DJI_GM6020_CURRENT) ? LIMIT_GM6020_CURR : LIMIT_GM6020_VOLT;
+            return (motor->gm6020_mode == GM6020_MOTOR_CURRENT) ? LIMIT_GM6020_CURR : LIMIT_GM6020_VOLT;
         case MOTOR_TYPE_M2006:
             return LIMIT_M2006;
         default:
@@ -146,7 +146,7 @@ static void update_feedback(dji_motor_t *motor, const can_event_t *event)
 
 /* 事件任务：CAN 中断把 0x201..0x20B 的帧拷成 can_event_t 投递过来，这里解码。
  * 优先级设为 0（最高）：先于 1 kHz 控制任务更新反馈，控制任务读到的就是最新的 */
-static void dji_run(void *argument, const uint8_t *message, uint16_t len)
+static void dji_motor_run(void *argument, const uint8_t *message, uint16_t len)
 {
     can_event_t event;
 
@@ -156,9 +156,9 @@ static void dji_run(void *argument, const uint8_t *message, uint16_t len)
         return;
     }
     memcpy(&event, message, sizeof event);
-    if (dji_dump_enabled)
+    if (dji_motor_dump_enabled)
     {
-        LOGI("dji can%u %03X [%u]", (unsigned)event.bus + 1u, (unsigned)event.id, (unsigned)event.len);
+        LOGI("dji_motor can%u %03X [%u]", (unsigned)event.bus + 1u, (unsigned)event.id, (unsigned)event.len);
     }
     if (event.len < 7u)
     {
@@ -172,7 +172,7 @@ static void dji_run(void *argument, const uint8_t *message, uint16_t len)
         {
             return;
         }
-        if (!is_dji_type(base->type) || base->bus != (can_id_e)event.bus || base->feedback_id != event.id)
+        if (!is_dji_motor_type(base->type) || base->bus != (can_id_e)event.bus || base->feedback_id != event.id)
         {
             continue;
         }
@@ -183,13 +183,13 @@ static void dji_run(void *argument, const uint8_t *message, uint16_t len)
         return;
     }
 }
-EVENT_TASK_DEFINE(dji_motor_task, OS_PRIORITY_HIGHEST, OS_STACK_MEDIUM, EVENT_QUEUE, sizeof(can_event_t), OS_QUEUE_LEN_32, OS_TIMEOUT_NONE, dji_run, NULL);
+EVENT_TASK_DEFINE(dji_motor_task, OS_PRIORITY_HIGHEST, OS_STACK_MEDIUM, EVENT_QUEUE, sizeof(can_event_t), OS_QUEUE_LEN_32, OS_TIMEOUT_NONE, dji_motor_run, NULL);
 
 int32_t dji_motor_register(dji_motor_t *motor, const dji_motor_config_t *config)
 {
     uint8_t slot;
 
-    if (motor == NULL || config == NULL || !is_dji_type(config->type) ||
+    if (motor == NULL || config == NULL || !is_dji_motor_type(config->type) ||
         config->offset_encoder >= ENCODER_COUNTS || tx_slot(config->type, config->gm6020_mode, config->id, &slot) < 0)
     {
         return ERR_INVAL;
@@ -291,7 +291,7 @@ int32_t dji_motor_compute_bus(can_id_e bus)
         {
             break;
         }
-        if (!is_dji_type(base->type) || base->bus != bus || !base->has_control)
+        if (!is_dji_motor_type(base->type) || base->bus != bus || !base->has_control)
         {
             continue;
         }
@@ -336,7 +336,7 @@ int32_t dji_motor_send_bus(can_id_e bus)
         {
             break;
         }
-        if (!is_dji_type(base->type) || base->bus != bus)
+        if (!is_dji_motor_type(base->type) || base->bus != bus)
         {
             continue;
         }
@@ -385,24 +385,24 @@ static int shell_dji_motor_dump(int argc, char *argv[])
 {
     if (argc == 1)
     {
-        shell_out("dji_motor_dump %s\r\n", dji_dump_enabled ? "on" : "off");
+        shell_out("dji_motor_dump %s\r\n", dji_motor_dump_enabled ? "on" : "off");
         return 0;
     }
     if (argc == 2 && strcmp(argv[1], "on") == 0)
     {
-        dji_dump_enabled = true;
+        dji_motor_dump_enabled = true;
     }
     else if (argc == 2 && strcmp(argv[1], "off") == 0)
     {
-        dji_dump_enabled = false;
+        dji_motor_dump_enabled = false;
     }
     else
     {
         shell_out("usage: dji_motor_dump [on|off]\r\n");
         return -1;
     }
-    shell_out("dji_motor_dump %s\r\n", dji_dump_enabled ? "on" : "off");
+    shell_out("dji_motor_dump %s\r\n", dji_motor_dump_enabled ? "on" : "off");
     return 0;
 }
-SHELL_CMD(dji_motor_dump, shell_dji_motor_dump, print_each_received_dji_can_frame)
+SHELL_CMD(dji_motor_dump, shell_dji_motor_dump, print_each_received_dji_motor_can_frame)
 #endif
