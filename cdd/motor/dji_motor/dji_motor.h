@@ -4,8 +4,8 @@
 #include "bsp/include/bsp_ids.h"
 #include "cdd/motor/motor.h"
 
-/* gm6020 的控制量种类。m3508 / m2006 只有电流帧，没有这一项，填 NONE。
- *   NONE：    不适用。gm6020 填它、m3508 / m2006 填电压或电流，注册返回 ERR_INVAL
+/* gm6020 的控制量种类。m3508 / m2006 只有电流帧，没有这一项，填 UNFIT。
+ *   UNFIT：   不适用。gm6020 填它、m3508 / m2006 填电压或电流，注册返回 ERR_INVAL
  *   电压：    旧固件和默认，报文 0x1FF(id1..4) / 0x2FF(id5..7)，范围 ±25000
  *   电流：    新固件，报文 0x1FE(id1..4) / 0x2FE(id5..7)，范围 ±16384（对应 ±3 A） */
 typedef enum
@@ -24,8 +24,8 @@ typedef struct
     bool              reverse;           /* true：反馈角度、速度、转矩取反，输出也取反 */
     uint16_t          offset_encoder;    /* 编码器零点偏移，0..8191；反馈角度 = 原始值 - 偏移 */
     uint32_t          timeout_ms;        /* 超过这么久没收到反馈 = 离线，不能为 0 */
-    gm6020_motor_mode_e gm6020_mode;       /* gm6020 填电压或电流；m3508 / m2006 填 NONE */
-    const motor_control_config_t *control;   /* 软件控制配置（PID、外部反馈、前馈），NULL = 只能用 dji_motor_set_cmd 直接给原始值 */
+    gm6020_motor_mode_e gm6020_mode;       /* gm6020 填电压或电流；m3508 / m2006 填 UNFIT */
+    const motor_control_config_t *control;   /* 软件控制配置（模式和 PID），NULL = 只能用 dji_motor_set_cmd 直接给原始值 */
 } dji_motor_config_t;
 
 typedef struct

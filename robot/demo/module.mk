@@ -1,1 +1,1 @@
-obj-$(CONFIG_ROBOT_DEMO_ROBOT_INIT) += robot_init.o
+obj-$(CONFIG_ROBOT_DEMO_MOTOR_INIT) += motor_init.o

@@ -1,21 +1,20 @@
-#include "robot/demo/robot_config.h"
+#include "robot/demo/motor_config.h"
 #include "component/common/initcall.h"
 #include "component/common/err.h"
 #include "component/log/log.h"
 
-/* 电机绑定：按 robot_config.h 里的表，为每个电机定义变量并绑定到 CAN 总线。
+/* 电机绑定：按 motor_config.h 里的表，为每个电机定义变量并绑定到 CAN 总线。
  * 这里只做注册和绑定，不关心电机属于哪个功能模块。 */
 
 #ifdef CONFIG_CDD_MOTOR_DJI_MOTOR
-/* 控制配置由 robot_config.h 的控制表展开。模式在表里写死。 */
+/* 控制配置由 motor_config.h 的控制表展开。模式在表里写死。 */
 #define ROBOT_DJI_MOTOR_CONTROL(_name, _mode, _akp, _aki, _akd, _akf, _aout, _aint, _aff, _adb, \
-                          _skp, _ski, _skd, _skf, _sout, _sint, _sff, _sdb, _afb, _sfb, _sffwd, _tffwd) \
+                          _skp, _ski, _skd, _skf, _sout, _sint, _sff, _sdb) \
     static const motor_control_config_t _name##_control =                                                  \
     {                                                                                                      \
         .mode = (_mode),                                                                                   \
         .angle_pid = { _akp, _aki, _akd, _akf, _aout, _aint, _aff, _adb },                                 \
         .speed_pid = { _skp, _ski, _skd, _skf, _sout, _sint, _sff, _sdb },                                 \
-        .signals = { _afb, _sfb, _sffwd, _tffwd },                                                         \
     };
 ROBOT_DJI_MOTOR_CONTROL_TABLE(ROBOT_DJI_MOTOR_CONTROL)
 #undef ROBOT_DJI_MOTOR_CONTROL
@@ -58,13 +57,12 @@ static int32_t bind_dji_motor(const char *name, dji_motor_t *motor, const dji_mo
 
 #ifdef CONFIG_CDD_MOTOR_DM_MOTOR
 #define ROBOT_DM_MOTOR_CONTROL(_name, _mode, _akp, _aki, _akd, _akf, _aout, _aint, _aff, _adb, \
-                         _skp, _ski, _skd, _skf, _sout, _sint, _sff, _sdb, _afb, _sfb, _sffwd, _tffwd) \
+                         _skp, _ski, _skd, _skf, _sout, _sint, _sff, _sdb) \
     static const motor_control_config_t _name##_control =                                                 \
     {                                                                                                     \
         .mode = (_mode),                                                                                  \
         .angle_pid = { _akp, _aki, _akd, _akf, _aout, _aint, _aff, _adb },                                \
         .speed_pid = { _skp, _ski, _skd, _skf, _sout, _sint, _sff, _sdb },                                \
-        .signals = { _afb, _sfb, _sffwd, _tffwd },                                                        \
     };
 ROBOT_DM_MOTOR_CONTROL_TABLE(ROBOT_DM_MOTOR_CONTROL)
 #undef ROBOT_DM_MOTOR_CONTROL
@@ -112,7 +110,7 @@ static int32_t bind_dm_motor(const char *name, dm_motor_t *motor, const dm_motor
     }
 #endif
 
-static int32_t robot_bind_motors(void)
+static int32_t motor_bind_init(void)
 {
     int32_t register_ret = ERR_OK;
 
@@ -124,4 +122,4 @@ static int32_t robot_bind_motors(void)
 #endif
     return register_ret;
 }
-INIT_APP_STAGE1(robot_bind_motors);
+INIT_APP_STAGE1(motor_bind_init);

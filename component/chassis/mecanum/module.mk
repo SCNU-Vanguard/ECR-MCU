@@ -1,0 +1,1 @@
+obj-$(CONFIG_COMPONENT_CHASSIS_MECANUM) += mecanum.o

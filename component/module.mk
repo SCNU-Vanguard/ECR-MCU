@@ -6,5 +6,6 @@ subdir-$(CONFIG_COMPONENT_PID) += pid
 subdir-$(CONFIG_COMPONENT_DSP) += dsp
 subdir-$(CONFIG_COMPONENT_AHRS) += ahrs
 subdir-$(CONFIG_COMPONENT_FILTER) += filter
+subdir-$(CONFIG_COMPONENT_CHASSIS) += chassis
 subdir-$(CONFIG_COMPONENT_CRC) += crc
 endif

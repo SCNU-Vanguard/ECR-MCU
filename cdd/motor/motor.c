@@ -87,10 +87,10 @@ void motor_control_setup(motor_t *motor, const motor_control_config_t *config)
     motor->active = false;
     motor->control_mode = (config != NULL) ? config->mode : MOTOR_CONTROL_TORQUE;
     motor->target = 0.0f;
-    motor_bind_angle_feedback(motor, (config != NULL) ? config->signals.angle_feedback : NULL);
-    motor_bind_speed_feedback(motor, (config != NULL) ? config->signals.speed_feedback : NULL);
-    motor_bind_speed_feedforward(motor, (config != NULL) ? config->signals.speed_feedforward : NULL);
-    motor_bind_torque_feedforward(motor, (config != NULL) ? config->signals.torque_feedforward : NULL);
+    motor_bind_angle_feedback(motor, NULL);
+    motor_bind_speed_feedback(motor, NULL);
+    motor_bind_speed_feedforward(motor, NULL);
+    motor_bind_torque_feedforward(motor, NULL);
     if (config == NULL)
     {
         return;
