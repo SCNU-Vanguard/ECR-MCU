@@ -3,7 +3,7 @@
 # 这里在 include 之后把目录前缀补上。CONFIG 不是 y 时追加到 obj-n，不会进最终的 obj-y。
 # subdir-$(CONFIG_XXX) += 子目录。父层 CONFIG 不是 y 时，不再进入它下面的目录。
 # 头文件、库、告警仍然用扫描时设好的 $(d)（带结尾斜杠）。
-# 哪些目录参与编译只由 robot/<r>/<r>.config 决定。
+# 哪些目录参与编译只由 robot/<r>/robot.config 决定。
 
 obj-y :=
 MODULE_INC :=

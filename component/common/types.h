@@ -12,7 +12,4 @@
 
 /* 可缓存大表。放在 RAM（0x24040000，64 KB）。Flash 里留一份初值，memory_init() 在开 D-Cache 之前拷过去。 */
 #define SRAM_CACHEABLE    __attribute__((section(".sram_cacheable"), aligned(8)))
-
-/* USB 内部 DMA 的缓冲：只能放 RAM_D2（0x30000000）。这块 DMA 访问不到 RAM_D1。 */
-#define USB_DMA           __attribute__((section(".usb_dma"), aligned(32)))
 #endif

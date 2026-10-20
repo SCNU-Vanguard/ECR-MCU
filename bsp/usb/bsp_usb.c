@@ -10,7 +10,7 @@ extern USBD_HandleTypeDef hUsbDeviceHS;   /* usb_device.c 里定义，没有头�
 #define TX_CHUNK  512u
 
 static uint8_t tx_queue_mem[2048] SRAM_NONCACHEABLE;
-static uint8_t tx_chunk[TX_CHUNK] USB_DMA; /* 内部 DMA 直接读这块，必须在 D2 SRAM；队列本身仍由 CPU 使用 */
+static uint8_t tx_chunk[TX_CHUNK] SRAM_NONCACHEABLE; /* 发给 USB FIFO 前的分块，和串口缓冲一样放 RAM_D1 */
 static struct __cqueue tx_queue;
 static struct event_task *rx_event;
 static volatile uint8_t tx_busy;

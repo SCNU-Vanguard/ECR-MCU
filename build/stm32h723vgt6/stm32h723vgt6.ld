@@ -65,7 +65,7 @@ MEMORY
 DTCM   (xrw)      : ORIGIN = 0x20000000, LENGTH = 128K   /* 栈、.data、.bss */
 RAM    (xrw)      : ORIGIN = 0x24040000, LENGTH = 64K    /* AXI 后 64 KB，可缓存：大表 */
 RAM_D1 (xrw)      : ORIGIN = 0x24000000, LENGTH = 256K   /* AXI 前 256 KB，不可缓存：缓冲和队列 */
-RAM_D2 (xrw)      : ORIGIN = 0x30000000, LENGTH = 32K    /* USB 内部 DMA */
+RAM_D2 (xrw)      : ORIGIN = 0x30000000, LENGTH = 32K    /* 内部 DMA 已关，当前没有数据放这里 */
 RAM_D3 (xrw)      : ORIGIN = 0x38000000, LENGTH = 16K    /* 只给 BDMA */
 ITCM   (xrw)      : ORIGIN = 0x00000000, LENGTH = 64K
 FLASH  (rx)       : ORIGIN = 0x08000000, LENGTH = 1024K
@@ -224,23 +224,18 @@ SECTIONS
   _itcm_start = ORIGIN(ITCM);
   _itcm_end = ORIGIN(ITCM) + LENGTH(ITCM);
 
-  /* USB 内部 DMA 能访问的内存只有 D2 SRAM。句柄里的 Setup 缓冲、CDC 收发缓冲、发送分块都放这里。
-   * 写在 .bss 前面，否则 *(.bss*) 会先把它们收进 DTCM。NOLOAD，由 memory_init() 清零 */
-  .usb_dma (NOLOAD) : ALIGN(32)
+  /* 不可缓存：DMA 缓冲、软件队列、字节流重组、RTOS 堆。NOLOAD，memory_init() 清零。
+   * CDC 收发缓冲是 Cube 生成的普通 .bss，必须写在下面的 *(.bss*) 前面，否则会进 DTCM。 */
+  .sram_noncacheable (NOLOAD) : ALIGN(32)
   {
-    _susb_dma = .;
-    . = ALIGN(32);
-    *usbd_conf.o(.bss.hpcd_USB_OTG_HS)
-    . = ALIGN(32);
+    _ssram_noncacheable = .;
     *usbd_cdc_if.o(.bss.UserRxBufferHS)
-    . = ALIGN(32);
     *usbd_cdc_if.o(.bss.UserTxBufferHS)
+    *(.sram_noncacheable)
+    *(.sram_noncacheable*)
     . = ALIGN(32);
-    *(.usb_dma)
-    *(.usb_dma*)
-    . = ALIGN(32);
-    _eusb_dma = .;
-  } >RAM_D2
+    _esram_noncacheable = .;
+  } >RAM_D1
 
   /* Uninitialized data section */
   . = ALIGN(4);
@@ -257,16 +252,6 @@ SECTIONS
     _ebss = .;         /* define a global symbol at bss end */
     __bss_end__ = _ebss;
   } >DTCM
-
-  /* 不可缓存：DMA 缓冲、软件队列、字节流重组、RTOS 堆。NOLOAD，memory_init() 清零 */
-  .sram_noncacheable (NOLOAD) : ALIGN(32)
-  {
-    _ssram_noncacheable = .;
-    *(.sram_noncacheable)
-    *(.sram_noncacheable*)
-    . = ALIGN(32);
-    _esram_noncacheable = .;
-  } >RAM_D1
 
   /* 可缓存大表。初值在 Flash，memory_init() 在开 D-Cache 之前拷过来 */
   _sisram_cacheable = LOADADDR(.sram_cacheable);

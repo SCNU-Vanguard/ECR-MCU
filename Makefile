@@ -3,7 +3,7 @@
 #   make p=h7 r=demo OPT=-Og V=1           # 临时改优化级别 / 显示完整命令
 #   make p=h7 r=demo clean
 #   make                                        # 等价于 make p=h7 r=demo
-# 配置文件：robot/<r>/<r>.config（CONFIG_XXX = y | n），与平台无关
+# 配置文件：robot/<r>/robot.config（CONFIG_XXX = y | n），与平台无关
 # 产物：output/<r>_<p>/<r>_<p>.{elf,bin,hex,map}
 
 TOP := $(CURDIR)
@@ -25,7 +25,7 @@ ifeq ($(MCU),)
 $(error unknown platform p=$(p); supported: h7 f4)
 endif
 
-CFGFILE := robot/$(r)/$(r).config
+CFGFILE := robot/$(r)/robot.config
 ifeq ($(wildcard $(CFGFILE)),)
 $(error $(CFGFILE) not found)
 endif

@@ -61,11 +61,11 @@ static void chassis_ctrl_run(void *argument)
     {
         speed.spin_rad_s = 0.0f;
     }
-    if (mecanum_solve(&demo_mecanum, &speed, wheel_rad_s) == ERR_OK)
+    if (mecanum_solve(&mecanum, &speed, wheel_rad_s) == ERR_OK)
     {
         for (uint32_t wheel_index = 0; wheel_index < CHASSIS_WHEEL_COUNT; wheel_index++)
         {
-            (void)motor_set_target(&chassis_wheel[wheel_index]->base, wheel_rad_s[wheel_index] * DEMO_M3508_GEAR_RATIO);
+            (void)motor_set_target(&chassis_wheel[wheel_index]->base, wheel_rad_s[wheel_index] * M3508_GEAR_RATIO);
         }
     }
     (void)motor_compute_bus(CAN_BUS1);
