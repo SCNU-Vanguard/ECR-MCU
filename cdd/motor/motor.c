@@ -76,9 +76,9 @@ void motor_bind_speed_feedforward(motor_t *motor, const float *speed_feedforward
     motor->signals.speed_feedforward = (speed_feedforward != NULL) ? speed_feedforward : &feedforward_zero;
 }
 
-void motor_bind_torque_feedforward(motor_t *motor, const float *torque_feedforward)
+void motor_bind_output_feedforward(motor_t *motor, const float *output_feedforward)
 {
-    motor->signals.torque_feedforward = (torque_feedforward != NULL) ? torque_feedforward : &feedforward_zero;
+    motor->signals.output_feedforward = (output_feedforward != NULL) ? output_feedforward : &feedforward_zero;
 }
 
 void motor_control_setup(motor_t *motor, const motor_control_config_t *config)
@@ -90,7 +90,7 @@ void motor_control_setup(motor_t *motor, const motor_control_config_t *config)
     motor_bind_angle_feedback(motor, NULL);
     motor_bind_speed_feedback(motor, NULL);
     motor_bind_speed_feedforward(motor, NULL);
-    motor_bind_torque_feedforward(motor, NULL);
+    motor_bind_output_feedforward(motor, NULL);
     if (config == NULL)
     {
         return;
@@ -150,9 +150,9 @@ float motor_speed_feedforward(const motor_t *motor)
     return *motor->signals.speed_feedforward;
 }
 
-float motor_torque_feedforward(const motor_t *motor)
+float motor_output_feedforward(const motor_t *motor)
 {
-    return *motor->signals.torque_feedforward;
+    return *motor->signals.output_feedforward;
 }
 
 float motor_speed_loop(motor_t *motor, float speed_reference)

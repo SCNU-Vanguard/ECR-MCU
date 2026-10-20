@@ -272,7 +272,7 @@ void dji_motor_compute(dji_motor_t *motor)
     {
         reference = motor_speed_loop(base, reference);
     }
-    base->output = reference + motor_torque_feedforward(base);
+    base->output = reference + motor_output_feedforward(base);
 }
 
 int32_t dji_motor_compute_bus(can_id_e bus)

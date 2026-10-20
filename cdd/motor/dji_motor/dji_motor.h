@@ -51,7 +51,7 @@ int32_t dji_motor_register(dji_motor_t *motor, const dji_motor_config_t *config)
 void    dji_motor_set_cmd(dji_motor_t *motor, int16_t cmd);
 
 /* 计算：把目标按控制模式算成 output（转矩给定，用户方向），active = false 则 output = cmd = 0。
- *   TORQUE：给定 + 转矩前馈   SPEED：速度环 + 转矩前馈   ANGLE：角度环 -> 速度环 + 转矩前馈
+ *   TORQUE：给定 + 输出前馈   SPEED：速度环 + 输出前馈   ANGLE：角度环 -> 速度环 + 输出前馈
  * 速度环是增量式，同一个电机一个控制周期内只能计算一次。没有控制配置的电机什么都不做 */
 void    dji_motor_compute(dji_motor_t *motor);
 /* 计算指定总线上所有有控制配置的 dji_motor，返回计算了几个；总线号非法返回 ERR_INVAL */

@@ -300,7 +300,7 @@ static void compute_torque(dm_motor_t *motor)
     {
         reference = motor_speed_loop(base, reference);
     }
-    base->output = limit_value(reference + motor_torque_feedforward(base), -motor->t_max, motor->t_max);
+    base->output = limit_value(reference + motor_output_feedforward(base), -motor->t_max, motor->t_max);
     motor->cmd_from_output = true;
 }
 
@@ -313,19 +313,19 @@ static void compute_mit(dm_motor_t *motor)
     switch (base->control_mode)
     {
         case MOTOR_CONTROL_TORQUE:
-            motor->cmd_torque = sign * (base->target + motor_torque_feedforward(base));
+            motor->cmd_torque = sign * (base->target + motor_output_feedforward(base));
             break;
         case MOTOR_CONTROL_SPEED:
             motor->cmd_velocity = sign * (base->target + motor_speed_feedforward(base));
             motor->cmd_kd = motor->kd;
-            motor->cmd_torque = sign * motor_torque_feedforward(base);
+            motor->cmd_torque = sign * motor_output_feedforward(base);
             break;
         case MOTOR_CONTROL_ANGLE:
             motor->cmd_position = angle_target_to_motor(motor);
             motor->cmd_velocity = sign * motor_speed_feedforward(base);
             motor->cmd_kp = motor->kp;
             motor->cmd_kd = motor->kd;
-            motor->cmd_torque = sign * motor_torque_feedforward(base);
+            motor->cmd_torque = sign * motor_output_feedforward(base);
             break;
     }
 }

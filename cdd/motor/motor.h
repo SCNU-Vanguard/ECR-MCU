@@ -42,7 +42,7 @@ typedef struct
     const float *angle_feedback;           /* 角度反馈 rad，默认电机单圈角度。角度环固定用单圈角度并把误差回绕到 ±pi */
     const float *speed_feedback;           /* 速度反馈 rad/s，默认电机自己的转速 */
     const float *speed_feedforward;        /* 速度前馈 rad/s，加在速度环给定上，默认 0 */
-    const float *torque_feedforward;       /* 转矩前馈，加在转矩给定上，默认 0 */
+    const float *output_feedforward;       /* 输出前馈，加在速度环输出上，单位与 motor_t::output 相同，默认 0 */
 } motor_signals_t;
 
 /* 控制配置：模式在注册时写死。
@@ -111,7 +111,7 @@ void motor_control_setup(motor_t *motor, const motor_control_config_t *config);
 void motor_bind_angle_feedback(motor_t *motor, const float *angle_feedback);
 void motor_bind_speed_feedback(motor_t *motor, const float *speed_feedback);
 void motor_bind_speed_feedforward(motor_t *motor, const float *speed_feedforward);
-void motor_bind_torque_feedforward(motor_t *motor, const float *torque_feedforward);
+void motor_bind_output_feedforward(motor_t *motor, const float *output_feedforward);
 /* 设置目标值。单位由注册时写死的模式决定：角度 rad、转速 rad/s 或转矩给定。
  * 没有控制配置的电机也能设置，但只有硬件自己闭环的模式（dm_motor 的 MIT 原生/位置速度/速度/力位混合）会生效，
  * 需要软件 PID 的组合没有控制配置时 dji_motor 输出 0，dm_motor 发保持帧 */
@@ -125,11 +125,11 @@ bool motor_control_ready(motor_t *motor);
 
 /* 控制器的两个环，各厂家按自己电机的硬件能力选用（dji_motor / dm_motor 内部已经闭好电流/转矩环，所以软件不做转矩环）：
  *   角度环：目标角度 -> 速度给定（不含前馈）
- *   速度环：速度给定 + 速度前馈 -> 转矩给定（转矩前馈由调用者用 motor_torque_feedforward 加上） */
+ *   速度环：速度给定 + 速度前馈 -> 速度环输出（输出前馈由调用者用 motor_output_feedforward 加上，单位与 motor_t::output 相同） */
 float motor_angle_loop(motor_t *motor, float angle_target);
 float motor_speed_loop(motor_t *motor, float speed_reference);
 float motor_speed_feedforward(const motor_t *motor);
-float motor_torque_feedforward(const motor_t *motor);
+float motor_output_feedforward(const motor_t *motor);
 void  motor_pids_clear(motor_t *motor);
 
 /* ---- 按总线计算 / 发送：自动按电机型号分发到 dji_motor / dm_motor 各自的报文格式 ----
