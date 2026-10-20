@@ -1,10 +1,11 @@
-#include "robot/demo/motor_config.h"
+#include "motor_config.h"
 #include "component/common/initcall.h"
 #include "component/common/err.h"
 #include "component/log/log.h"
 
-/* 电机绑定：按 motor_config.h 里的表，为每个电机定义变量并绑定到 CAN 总线。
- * 这里只做注册和绑定，不关心电机属于哪个功能模块。 */
+/* 各兵种共用的电机注册。编译参数里有 -I robot/<r>，这里的 motor_config.h 就是当前兵种的表。
+ * 兵种目录要提供四张表；某一类电机没有时，表体留空。
+ * 这里只定义变量并注册，不关心电机属于哪个功能模块。 */
 
 #ifdef CONFIG_CDD_MOTOR_DJI_MOTOR
 /* 控制配置由 motor_config.h 的控制表展开。模式在表里写死。 */

@@ -5,7 +5,7 @@
 #include "component/common/err.h"
 #include "cdd/remote/dt7/dt7.h"
 #include "cdd/imu/ins/ins.h"
-#include "robot/demo/motor_config.h"
+#include "motor_config.h"
 
 #define GIMBAL_STICK_MAX        660.0f
 #define GIMBAL_STICK_IGNORE     20

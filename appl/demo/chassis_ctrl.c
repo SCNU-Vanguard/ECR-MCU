@@ -3,8 +3,8 @@
 #include "component/common/initcall.h"
 #include "component/common/err.h"
 #include "cdd/remote/dt7/dt7.h"
-#include "robot/demo/motor_config.h"
-#include "robot/demo/mechanical_config.h"
+#include "motor_config.h"
+#include "mechanical_config.h"
 
 #define CHASSIS_STICK_MAX       660.0f
 #define CHASSIS_STICK_IGNORE    20
