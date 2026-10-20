@@ -1,5 +1,5 @@
-#ifndef MECHANICAL_CONFIG_H__
-#define MECHANICAL_CONFIG_H__
+#ifndef CHASSIS_CONFIG_H__
+#define CHASSIS_CONFIG_H__
 #include "component/chassis/mecanum/mecanum.h"
 
 /* demo 底盘是麦克纳姆，辊子 45°。长度还没实测。

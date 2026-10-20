@@ -7,4 +7,5 @@ subdir-$(CONFIG_CDD_BUZZER) += buzzer
 subdir-$(CONFIG_CDD_REFEREE) += referee
 subdir-$(CONFIG_CDD_IMGTRANS) += imgtrans
 subdir-$(CONFIG_CDD_VISION) += vision
+subdir-$(CONFIG_CDD_INTERBOARD) += interboard
 endif

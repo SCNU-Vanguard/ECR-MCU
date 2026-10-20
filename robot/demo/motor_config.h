@@ -1,6 +1,6 @@
 #ifndef MOTOR_CONFIG_H__
 #define MOTOR_CONFIG_H__
-/* demo 的电机表。只放数据；注册在 robot/motor_init.c，机械尺寸在 mechanical_config.h。
+/* demo 的电机表。只放数据；注册在 robot/motor_init.c，底盘尺寸在 chassis_config.h。
  * CAN_BUS0 = FDCAN1 发射，CAN_BUS1 = FDCAN2 底盘，CAN_BUS2 = FDCAN3 云台。
  * 底盘四个 m3508，ID 1–4 对应数学象限 1–4（右前、左前、左后、右后），速度环。
  * 云台 yaw 是 j4310（0x05 / 0x15），pitch 是 gm6020 ID 1，都是角度环。

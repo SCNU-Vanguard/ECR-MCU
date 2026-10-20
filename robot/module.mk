@@ -3,7 +3,7 @@ ifeq ($(CONFIG_ROBOT),y)
     obj-y += motor_init.o
     MODULE_INC += $(d)$(r)
     ifeq ($(r),demo)
-        # demo 只有头文件：motor_config.h、mechanical_config.h。
+        # demo 只有头文件：motor_config.h、chassis_config.h、vision_config.h、interboard_config.h。
     else
         $(error unknown robot r=$(r); add a branch in robot/module.mk)
     endif
