@@ -1,5 +1,6 @@
 #include <string.h>
 #include "cdd/vision/vision.h"
+#include "vision_config.h"
 #include "bsp/usb/bsp_usb.h"
 #include "osal/event.h"
 #include "osal/osal.h"
@@ -7,23 +8,70 @@
 #include "component/common/err.h"
 #include "component/crc/crc.h"
 
+_Static_assert(VISION_PAYLOAD_MAX <= 255u, "vision payload length is one byte");
+
 #define VISION_RX_BLOCK_MAX   64u     /* 本板 USB 枚举为全速 CDC，一次接收最多 64 字节 */
 #define VISION_HEADER_LENGTH  3u      /* 帧头 + 长度 + 命令 */
 #define VISION_CRC_LENGTH     2u
 #define VISION_MAX_FRAME      (VISION_HEADER_LENGTH + VISION_PAYLOAD_MAX + VISION_CRC_LENGTH)
 #define VISION_STREAM_SIZE    (VISION_MAX_FRAME - 1u + VISION_RX_BLOCK_MAX)
 
+typedef struct
+{
+    uint8_t command;
+    uint8_t length;
+    void   *cache;
+    bool    seen;
+} vision_slot_t;
+
 static vision_link_t link;
-static vision_rx_fn rx_fn;
-static void *rx_argument;
+static vision_slot_t packets[VISION_CMD_MAX];
+static uint8_t packet_count;
 static uint8_t stream[VISION_STREAM_SIZE];
 static uint32_t stream_count;
 
-int32_t vision_send(uint8_t command, const void *payload, uint8_t length)
+static vision_slot_t *find_packet(uint8_t command)
 {
-    uint8_t frame[VISION_MAX_FRAME];
+    for (uint8_t index = 0; index < packet_count; index++)
+    {
+        if (packets[index].command == command)
+        {
+            return &packets[index];
+        }
+    }
+    return NULL;
+}
 
-    if ((payload == NULL && length != 0u) || length > VISION_PAYLOAD_MAX)
+int32_t vision_bind(const vision_packet_t *table, uint8_t count)
+{
+    if (table == NULL || count == 0u || count > VISION_CMD_MAX)
+    {
+        return ERR_INVAL;
+    }
+    for (uint8_t index = 0; index < count; index++)
+    {
+        if (table[index].length > VISION_PAYLOAD_MAX || (table[index].length != 0u && table[index].cache == NULL))
+        {
+            return ERR_INVAL;
+        }
+        if (find_packet(table[index].command) != NULL)
+        {
+            return ERR_INVAL;
+        }
+        packets[index].command = table[index].command;
+        packets[index].length = table[index].length;
+        packets[index].cache = table[index].cache;
+        packets[index].seen = false;
+        packet_count++;
+    }
+    return ERR_OK;
+}
+
+int32_t vision_write(uint8_t command, const void *payload, uint8_t length)
+{
+    vision_slot_t *slot = find_packet(command);
+
+    if (slot == NULL || length != slot->length || (payload == NULL && length != 0u))
     {
         return ERR_INVAL;
     }
@@ -32,6 +80,7 @@ int32_t vision_send(uint8_t command, const void *payload, uint8_t length)
         return ERR_NODEV;
     }
 
+    uint8_t frame[VISION_MAX_FRAME];
     uint32_t frame_length = VISION_HEADER_LENGTH + (uint32_t)length + VISION_CRC_LENGTH;
 
     frame[0] = VISION_SOF;
@@ -43,18 +92,32 @@ int32_t vision_send(uint8_t command, const void *payload, uint8_t length)
     }
     crc16_append(frame, frame_length);
 
+    uint32_t irq_key = os_irq_save();
+
+    if (length != 0u && slot->cache != NULL)
+    {
+        memcpy(slot->cache, payload, length);
+    }
+    os_irq_restore(irq_key);
+
     int32_t queued = bsp_usb_write(frame, frame_length);
 
     return (queued == (int32_t)frame_length) ? ERR_OK : ERR_BUSY;
 }
 
-void vision_bind_rx(vision_rx_fn fn, void *argument)
+bool vision_read(uint8_t command, void *payload, uint8_t length)
 {
     uint32_t irq_key = os_irq_save();
+    vision_slot_t *slot = find_packet(command);
+    bool ok = slot != NULL && slot->seen && length == slot->length &&
+              (length == 0u || (payload != NULL && slot->cache != NULL));
 
-    rx_fn = fn;
-    rx_argument = argument;
+    if (ok && length != 0u)
+    {
+        memcpy(payload, slot->cache, length);
+    }
     os_irq_restore(irq_key);
+    return ok;
 }
 
 void vision_get_link(vision_link_t *out)
@@ -81,20 +144,23 @@ static void drop_bytes(uint32_t count)
 
 static void accept_frame(uint8_t command, const uint8_t *payload, uint8_t length)
 {
-    vision_rx_fn fn;
-    void *argument;
-
+    vision_slot_t *slot = find_packet(command);
     uint32_t irq_key = os_irq_save();
 
     link.online = true;
-    link.frames++;
-    fn = rx_fn;
-    argument = rx_argument;
-    os_irq_restore(irq_key);
-    if (fn != NULL)
+    if (slot == NULL || length != slot->length)
     {
-        fn(command, payload, length, argument);
+        link.bad_frames++;
+        os_irq_restore(irq_key);
+        return;
     }
+    if (length != 0u && slot->cache != NULL && payload != NULL)
+    {
+        memcpy(slot->cache, payload, length);
+    }
+    slot->seen = true;
+    link.frames++;
+    os_irq_restore(irq_key);
 }
 
 /* 帧头对上之后：长度不能超过载荷上限，收齐后再验 CRC。失败只丢 1 字节，避免假 0xA5 吃掉后面的真帧 */
@@ -168,8 +234,27 @@ static void vision_run(void *argument, const uint8_t *data, uint16_t len)
 EVENT_TASK_DEFINE(vision_task, OS_PRIORITY_MEDIUM, OS_STACK_MEDIUM, EVENT_QUEUE, VISION_RX_BLOCK_MAX, OS_QUEUE_LEN_8,
                   OS_TIMEOUT_200MS, vision_run, NULL);
 
+#define VISION_DEFINE(name, id, type)   static type vision_##name;
+VISION_PACKET_TABLE(VISION_DEFINE)
+#undef VISION_DEFINE
+
+#define VISION_ROW(name, id, type) \
+    { (id), (uint8_t)sizeof(vision_##name), &vision_##name },
+
+static const vision_packet_t vision_packets[] =
+{
+    VISION_PACKET_TABLE(VISION_ROW)
+};
+#undef VISION_ROW
+
 static int32_t vision_init(void)
 {
+    int32_t bind_result = vision_bind(vision_packets, (uint8_t)(sizeof vision_packets / sizeof vision_packets[0]));
+
+    if (bind_result != ERR_OK)
+    {
+        return bind_result;
+    }
     bsp_usb_bind_event(&vision_task);
     return ERR_OK;
 }

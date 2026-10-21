@@ -2,28 +2,37 @@
 #define CDD_VISION_H__
 #include "component/common/types.h"
 
-/* USB CDC 上的视觉链路。CDC 是字节流，一帧可能被拆开，也可能多帧粘在一次接收里，所以在任务里组帧。
+/* USB CDC 上的视觉链路。一帧可能被拆开，也可能多帧粘在一次接收里，所以在任务里组帧。
  *
  * 帧格式（小端）：
  *   0xA5 | 载荷长度 | 命令 | 载荷 | CRC16 低字节 | CRC16 高字节
- * CRC16 覆盖前面所有字节，算法和裁判系统相同（crc16_append / crc16_verify）。
- * 载荷内容由各兵种自己定，本模块只检查外层。载荷最长 VISION_PAYLOAD_MAX。
- * 收到合法帧后调用绑定的回调。200 ms 没有合法帧视为上位机离线，回调不因此触发。 */
+ * CRC16 覆盖前面所有字节，算法和裁判系统相同。
+ * 命令号、载荷结构和载荷上限由兵种配置。收到合法帧后按命令号和长度写入对应缓存。
+ * 200 ms 没有合法帧视为上位机离线。 */
 
 #define VISION_SOF            0xA5u
-#define VISION_PAYLOAD_MAX    32u
-
-typedef void (*vision_rx_fn)(uint8_t command, const uint8_t *payload, uint8_t length, void *argument);
+#define VISION_CMD_MAX     8u
 
 typedef struct
 {
-    bool     online;        /* 最近 200 ms 内收到过 CRC 正确的帧 */
-    uint32_t frames;        /* CRC 正确的帧数，含本兵种不认识的命令 */
-    uint32_t bad_frames;    /* 帧头像对过、但长度或 CRC 不对 */
+    uint8_t command;
+    uint8_t length;
+    void   *cache;
+} vision_packet_t;
+
+typedef struct
+{
+    bool     online;
+    uint32_t frames;        /* 命令号和长度都对上、已写入缓存的帧 */
+    uint32_t bad_frames;    /* CRC 不对，或命令号/长度没有注册项 */
+    uint32_t timeouts;
 } vision_link_t;
 
-/* 组一帧并从 USB 发出。未枚举时不入队，返回 ERR_NODEV。队列放不下整帧返回 ERR_BUSY */
-int32_t vision_send(uint8_t command, const void *payload, uint8_t length);
-void    vision_bind_rx(vision_rx_fn fn, void *argument);
+/* table 必须一直有效。重复命令号、长度超过上限、长度为 0 却没有缓存：返回 ERR_INVAL */
+int32_t vision_bind(const vision_packet_t *table, uint8_t count);
+/* 长度必须等于该命令注册的长度。拷进缓存再发出。未枚举返回 ERR_NODEV */
+int32_t vision_write(uint8_t command, const void *payload, uint8_t length);
+/* 拷贝该命令最近一次收进缓存的载荷。还没收到过，或 length 与注册长度不同：返回 false */
+bool    vision_read(uint8_t command, void *payload, uint8_t length);
 void    vision_get_link(vision_link_t *out);
 #endif

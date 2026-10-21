@@ -4,7 +4,7 @@
 #include "component/common/initcall.h"
 #include "component/common/err.h"
 #include "cdd/remote/dt7/dt7.h"
-#include "motor_config.h"
+#include "cdd/motor/motor_init.h"
 
 #define SHOOT_SWITCH_ON            1u
 #define SHOOT_TRIGGER_RAD_S        40.0f

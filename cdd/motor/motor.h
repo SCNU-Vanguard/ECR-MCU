@@ -9,7 +9,7 @@
  * 具体电机（dji_motor_t、dm_motor_t）的第一个成员都是 motor_t，可以直接取地址当 motor_t * 用。
  *
  * 使用流程：
- *   1. robot 里按表注册（绑定总线），注册时可以带一份控制配置（模式和 PID）。反馈默认是电机自己的，前馈为 0，要换在初始化里 motor_bind_xxx
+ *   1. cdd/motor/motor_init.c 按 robot 的电机表注册（绑定总线），注册时可以带一份控制配置（模式和 PID）。反馈默认是电机自己的，前馈为 0，要换在初始化里 motor_bind_xxx
  *   2. 应用里 motor_set_target() 设目标，motor_set_active(motor, true) 打开输出
  *   3. 周期任务里按总线调用 motor_compute_bus() 计算、motor_send_bus() 发送：自动按各电机的控制模式计算，并按各厂家的报文格式发到各自绑定的总线（dm_motor 还可以 dm_motor_send 单个电机发送） */
 

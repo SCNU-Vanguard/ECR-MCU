@@ -1,4 +1,4 @@
-#include "motor_config.h"
+#include "motor_init.h"
 #include "component/common/initcall.h"
 #include "component/common/err.h"
 #include "component/log/log.h"

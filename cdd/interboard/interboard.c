@@ -1,5 +1,6 @@
 #include <string.h>
 #include "cdd/interboard/interboard.h"
+#include "interboard_config.h"
 #include "bsp/uart/bsp_uart.h"
 #include "osal/event.h"
 #include "osal/osal.h"
@@ -14,6 +15,8 @@
 #error interboard: set CONFIG_CDD_INTERBOARD_MASTER or CONFIG_CDD_INTERBOARD_SLAVE
 #endif
 
+_Static_assert(INTERBOARD_PAYLOAD_MAX <= 255u, "interboard payload length is one byte");
+
 #define INTERBOARD_SOF            0xA5u
 #define INTERBOARD_RX_BLOCK_MAX   128u    /* 与 board.c 里 interboard 接收缓冲一致 */
 #define INTERBOARD_HEADER_LENGTH  4u      /* 帧头 + 长度 + 命令 + 序号 */
@@ -23,17 +26,21 @@
 #define INTERBOARD_REPLY_MS       10u
 #define INTERBOARD_OFFLINE_GAP_MS 50u
 #define INTERBOARD_OFFLINE_STREAK 3u
-#define INTERBOARD_SLOT_COUNT     8u
 
 typedef struct
 {
     uint8_t command;
-    uint8_t length;
-    uint8_t data[INTERBOARD_PAYLOAD_MAX];
-    bool    used;
+    uint8_t request_length;
+    uint8_t reply_length;
+    void   *request;
+    void   *reply;
+    bool    request_seen;
+    bool    reply_seen;
 } interboard_slot_t;
 
 static interboard_link_t link;
+static interboard_slot_t commands[INTERBOARD_CMD_MAX];
+static uint8_t command_count;
 static uint8_t stream[INTERBOARD_STREAM_SIZE];
 static uint32_t stream_count;
 static uint32_t last_ok_ms;
@@ -49,67 +56,51 @@ static uint8_t in_flight_sequence;
 static uint32_t in_flight_ms;
 static uint8_t next_sequence;
 static uint8_t timeout_streak;
-static interboard_slot_t replies[INTERBOARD_SLOT_COUNT];
-#elif defined(CONFIG_CDD_INTERBOARD_SLAVE)
-static interboard_slot_t requests[INTERBOARD_SLOT_COUNT];
-static interboard_slot_t replies[INTERBOARD_SLOT_COUNT];
 #endif
 
-static interboard_slot_t *slot_of(interboard_slot_t *slots, uint8_t command)
+static interboard_slot_t *find_command(uint8_t command)
 {
-    interboard_slot_t *spare = NULL;
-
-    for (uint32_t index = 0; index < INTERBOARD_SLOT_COUNT; index++)
+    for (uint8_t index = 0; index < command_count; index++)
     {
-        if (slots[index].used && slots[index].command == command)
+        if (commands[index].command == command)
         {
-            return &slots[index];
-        }
-        if (!slots[index].used && spare == NULL)
-        {
-            spare = &slots[index];
+            return &commands[index];
         }
     }
-    return spare;
+    return NULL;
 }
 
-static int32_t slot_write(interboard_slot_t *slots, uint8_t command, const void *payload, uint8_t length)
+int32_t interboard_bind(const interboard_cmd_t *table, uint8_t count)
 {
-    interboard_slot_t *slot = slot_of(slots, command);
-
-    if (slot == NULL)
+    if (table == NULL || count == 0u || count > INTERBOARD_CMD_MAX)
     {
-        return ERR_NOMEM;
+        return ERR_INVAL;
     }
-    slot->command = command;
-    slot->length = length;
-    if (length != 0u)
+    for (uint8_t index = 0; index < count; index++)
     {
-        memcpy(slot->data, payload, length);
+        if (table[index].request_length > INTERBOARD_PAYLOAD_MAX || table[index].reply_length > INTERBOARD_PAYLOAD_MAX)
+        {
+            return ERR_INVAL;
+        }
+        if ((table[index].request_length != 0u && table[index].request == NULL) ||
+            (table[index].reply_length != 0u && table[index].reply == NULL))
+        {
+            return ERR_INVAL;
+        }
+        if (find_command(table[index].command) != NULL)
+        {
+            return ERR_INVAL;
+        }
+        commands[index].command = table[index].command;
+        commands[index].request_length = table[index].request_length;
+        commands[index].reply_length = table[index].reply_length;
+        commands[index].request = table[index].request;
+        commands[index].reply = table[index].reply;
+        commands[index].request_seen = false;
+        commands[index].reply_seen = false;
+        command_count++;
     }
-    slot->used = true;
     return ERR_OK;
-}
-
-static bool slot_read(interboard_slot_t *slots, uint8_t command, void *payload, uint8_t *length)
-{
-    for (uint32_t index = 0; index < INTERBOARD_SLOT_COUNT; index++)
-    {
-        if (!slots[index].used || slots[index].command != command)
-        {
-            continue;
-        }
-        if (payload != NULL && slots[index].length != 0u)
-        {
-            memcpy(payload, slots[index].data, slots[index].length);
-        }
-        if (length != NULL)
-        {
-            *length = slots[index].length;
-        }
-        return true;
-    }
-    return false;
 }
 
 void interboard_get_link(interboard_link_t *out)
@@ -151,10 +142,26 @@ static void drop_bytes(uint32_t count)
     memmove(stream, stream + count, stream_count);
 }
 
+static bool copy_out(const interboard_slot_t *slot, bool seen, uint8_t expect, const void *cache, void *payload, uint8_t length)
+{
+    if (!seen || length != expect || (length != 0u && (payload == NULL || cache == NULL)))
+    {
+        return false;
+    }
+    if (length != 0u)
+    {
+        memcpy(payload, cache, length);
+    }
+    (void)slot;
+    return true;
+}
+
 #if defined(CONFIG_CDD_INTERBOARD_MASTER)
 int32_t interboard_post(uint8_t command, const void *payload, uint8_t length)
 {
-    if ((payload == NULL && length != 0u) || length > INTERBOARD_PAYLOAD_MAX)
+    interboard_slot_t *slot = find_command(command);
+
+    if (slot == NULL || length != slot->request_length || (payload == NULL && length != 0u))
     {
         return ERR_INVAL;
     }
@@ -166,19 +173,24 @@ int32_t interboard_post(uint8_t command, const void *payload, uint8_t length)
     if (length != 0u)
     {
         memcpy(pending_payload, payload, length);
+        if (slot->request != NULL)
+        {
+            memcpy(slot->request, payload, length);
+        }
     }
     pending = true;
     os_irq_restore(irq_key);
     return ERR_OK;
 }
 
-bool interboard_get_reply(uint8_t command, void *payload, uint8_t *length)
+bool interboard_read(uint8_t command, void *payload, uint8_t length)
 {
     uint32_t irq_key = os_irq_save();
-    bool found = slot_read(replies, command, payload, length);
+    interboard_slot_t *slot = find_command(command);
+    bool ok = slot != NULL && copy_out(slot, slot->reply_seen, slot->reply_length, slot->reply, payload, length);
 
     os_irq_restore(irq_key);
-    return found;
+    return ok;
 }
 
 static void try_send(void)
@@ -235,8 +247,17 @@ static void try_send(void)
 
 static void master_on_frame(uint8_t command, uint8_t sequence, const uint8_t *payload, uint8_t length)
 {
+    interboard_slot_t *slot;
+
     if (!in_flight || command != in_flight_command || sequence != in_flight_sequence)
     {
+        return;
+    }
+    slot = find_command(command);
+    if (slot == NULL || length != slot->reply_length)
+    {
+        note_bad_frame();
+        in_flight = false;
         return;
     }
     in_flight = false;
@@ -245,7 +266,11 @@ static void master_on_frame(uint8_t command, uint8_t sequence, const uint8_t *pa
 
     uint32_t irq_key = os_irq_save();
 
-    (void)slot_write(replies, command, payload, length);
+    if (length != 0u && slot->reply != NULL)
+    {
+        memcpy(slot->reply, payload, length);
+    }
+    slot->reply_seen = true;
     link.online = true;
     link.frames++;
     os_irq_restore(irq_key);
@@ -271,51 +296,59 @@ static void master_age(void)
     os_irq_restore(irq_key);
 }
 #elif defined(CONFIG_CDD_INTERBOARD_SLAVE)
-int32_t interboard_set_reply(uint8_t command, const void *payload, uint8_t length)
+int32_t interboard_write(uint8_t command, const void *payload, uint8_t length)
 {
-    int32_t result;
+    interboard_slot_t *slot = find_command(command);
 
-    if ((payload == NULL && length != 0u) || length > INTERBOARD_PAYLOAD_MAX)
+    if (slot == NULL || length != slot->reply_length || (payload == NULL && length != 0u))
     {
         return ERR_INVAL;
     }
 
     uint32_t irq_key = os_irq_save();
 
-    result = slot_write(replies, command, payload, length);
+    if (length != 0u && slot->reply != NULL)
+    {
+        memcpy(slot->reply, payload, length);
+    }
+    slot->reply_seen = true;
     os_irq_restore(irq_key);
-    return result;
+    return ERR_OK;
 }
 
-bool interboard_get_request(uint8_t command, void *payload, uint8_t *length)
+bool interboard_read(uint8_t command, void *payload, uint8_t length)
 {
     uint32_t irq_key = os_irq_save();
-    bool found = slot_read(requests, command, payload, length);
+    interboard_slot_t *slot = find_command(command);
+    bool ok = slot != NULL && copy_out(slot, slot->request_seen, slot->request_length, slot->request, payload, length);
 
     os_irq_restore(irq_key);
-    return found;
+    return ok;
 }
 
 static void slave_on_frame(uint8_t command, uint8_t sequence, const uint8_t *payload, uint8_t length)
 {
     uint8_t reply[INTERBOARD_PAYLOAD_MAX];
-    uint8_t reply_length = 0;
+    uint8_t reply_length;
+    interboard_slot_t *slot = find_command(command);
+
+    if (slot == NULL || length != slot->request_length)
+    {
+        note_bad_frame();
+        return;
+    }
 
     uint32_t irq_key = os_irq_save();
 
-    (void)slot_write(requests, command, payload, length);
-    for (uint32_t index = 0; index < INTERBOARD_SLOT_COUNT; index++)
+    if (length != 0u && slot->request != NULL)
     {
-        if (!replies[index].used || replies[index].command != command)
-        {
-            continue;
-        }
-        reply_length = replies[index].length;
-        if (reply_length != 0u)
-        {
-            memcpy(reply, replies[index].data, reply_length);
-        }
-        break;
+        memcpy(slot->request, payload, length);
+    }
+    slot->request_seen = true;
+    reply_length = slot->reply_length;
+    if (reply_length != 0u && slot->reply != NULL)
+    {
+        memcpy(reply, slot->reply, reply_length);
     }
     os_irq_restore(irq_key);
 
@@ -429,8 +462,35 @@ static void interboard_run(void *argument, const uint8_t *data, uint16_t len)
 EVENT_TASK_DEFINE(interboard_task, OS_PRIORITY_HIGH, OS_STACK_MEDIUM, EVENT_QUEUE, INTERBOARD_RX_BLOCK_MAX,
                   OS_QUEUE_LEN_4, OS_TIMEOUT_10MS, interboard_run, NULL);
 
+#define INTERBOARD_DEFINE(name, id, request_type, reply_type) \
+    static request_type interboard_##name##_request;          \
+    static reply_type interboard_##name##_reply;
+INTERBOARD_CMD_TABLE(INTERBOARD_DEFINE)
+#undef INTERBOARD_DEFINE
+
+#define INTERBOARD_ROW(name, id, request_type, reply_type)                                      \
+    {                                                                                           \
+        (id),                                                                                   \
+        (uint8_t)sizeof(interboard_##name##_request),                                           \
+        (uint8_t)sizeof(interboard_##name##_reply),                                             \
+        sizeof(interboard_##name##_request) ? (void *)&interboard_##name##_request : NULL,     \
+        sizeof(interboard_##name##_reply) ? (void *)&interboard_##name##_reply : NULL,         \
+    },
+
+static const interboard_cmd_t interboard_cmds[] =
+{
+    INTERBOARD_CMD_TABLE(INTERBOARD_ROW)
+};
+#undef INTERBOARD_ROW
+
 static int32_t interboard_init(void)
 {
+    int32_t bind_result = interboard_bind(interboard_cmds, (uint8_t)(sizeof interboard_cmds / sizeof interboard_cmds[0]));
+
+    if (bind_result != ERR_OK)
+    {
+        return bind_result;
+    }
     bsp_uart_bind_event(UART_INTERBOARD, &interboard_task);
     return ERR_OK;
 }
