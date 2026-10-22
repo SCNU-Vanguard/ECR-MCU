@@ -34,7 +34,7 @@ int32_t interboard_bind(const interboard_cmd_t *table, uint8_t count);
 void    interboard_get_link(interboard_link_t *out);
 
 #if defined(CONFIG_CDD_INTERBOARD_MASTER)
-/* 长度必须等于该命令的 request_length。后一次 post 覆盖还没发出去的上一次 */
+/* 长度必须等于该命令的 request_length。没有在等应答时马上发出；还在等时，后一次 post 覆盖上一帧 */
 int32_t interboard_post(uint8_t command, const void *payload, uint8_t length);
 /* 拷贝该命令最近一次应答。还没收到过，或 length 与 reply_length 不同：返回 false */
 bool    interboard_read(uint8_t command, void *payload, uint8_t length);

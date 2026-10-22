@@ -157,6 +157,8 @@ static bool copy_out(const interboard_slot_t *slot, bool seen, uint8_t expect, c
 }
 
 #if defined(CONFIG_CDD_INTERBOARD_MASTER)
+static void try_send(void);
+
 int32_t interboard_post(uint8_t command, const void *payload, uint8_t length)
 {
     interboard_slot_t *slot = find_command(command);
@@ -180,6 +182,7 @@ int32_t interboard_post(uint8_t command, const void *payload, uint8_t length)
     }
     pending = true;
     os_irq_restore(irq_key);
+    try_send();
     return ERR_OK;
 }
 
