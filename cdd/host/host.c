@@ -264,7 +264,14 @@ static const host_packet_t host_packets[] =
 
 static int32_t host_init(void)
 {
-    int32_t bind_result = host_bind(host_packets, (uint8_t)(sizeof host_packets / sizeof host_packets[0]));
+    uint8_t count = (uint8_t)(sizeof host_packets / sizeof host_packets[0]);
+
+    if (count == 0u)
+    {
+        return ERR_OK;
+    }
+
+    int32_t bind_result = host_bind(host_packets, count);
 
     if (bind_result != ERR_OK)
     {
