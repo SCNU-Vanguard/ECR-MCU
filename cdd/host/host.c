@@ -1,6 +1,6 @@
 #include <string.h>
-#include "cdd/vision/vision.h"
-#include "vision_config.h"
+#include "cdd/host/host.h"
+#include "host_config.h"
 #include "bsp/usb/bsp_usb.h"
 #include "osal/event.h"
 #include "osal/osal.h"
@@ -8,29 +8,30 @@
 #include "component/common/err.h"
 #include "component/crc/crc.h"
 
-_Static_assert(VISION_PAYLOAD_MAX <= 255u, "vision payload length is one byte");
+_Static_assert(HOST_PAYLOAD_MAX <= 255u, "host payload length is one byte");
 
-#define VISION_RX_BLOCK_MAX   64u     /* 本板 USB 枚举为全速 CDC，一次接收最多 64 字节 */
-#define VISION_HEADER_LENGTH  3u      /* 帧头 + 长度 + 命令 */
-#define VISION_CRC_LENGTH     2u
-#define VISION_MAX_FRAME      (VISION_HEADER_LENGTH + VISION_PAYLOAD_MAX + VISION_CRC_LENGTH)
-#define VISION_STREAM_SIZE    (VISION_MAX_FRAME - 1u + VISION_RX_BLOCK_MAX)
+#define HOST_RX_BLOCK_MAX   64u     /* 本板 USB 枚举为全速 CDC，一次接收最多 64 字节 */
+#define HOST_HEADER_LENGTH  3u      /* 帧头 + 长度 + 命令 */
+#define HOST_CRC_LENGTH     2u
+#define HOST_MAX_FRAME      (HOST_HEADER_LENGTH + HOST_PAYLOAD_MAX + HOST_CRC_LENGTH)
+#define HOST_STREAM_SIZE    (HOST_MAX_FRAME - 1u + HOST_RX_BLOCK_MAX)
 
 typedef struct
 {
     uint8_t command;
+    uint8_t direction;
     uint8_t length;
     void   *cache;
     bool    seen;
-} vision_slot_t;
+} host_slot_t;
 
-static vision_link_t link;
-static vision_slot_t packets[VISION_CMD_MAX];
+static host_link_t link;
+static host_slot_t packets[HOST_CMD_MAX];
 static uint8_t packet_count;
-static uint8_t stream[VISION_STREAM_SIZE];
+static uint8_t stream[HOST_STREAM_SIZE];
 static uint32_t stream_count;
 
-static vision_slot_t *find_packet(uint8_t command)
+static host_slot_t *find_packet(uint8_t command)
 {
     for (uint8_t index = 0; index < packet_count; index++)
     {
@@ -42,15 +43,17 @@ static vision_slot_t *find_packet(uint8_t command)
     return NULL;
 }
 
-int32_t vision_bind(const vision_packet_t *table, uint8_t count)
+int32_t host_bind(const host_packet_t *table, uint8_t count)
 {
-    if (table == NULL || count == 0u || count > VISION_CMD_MAX)
+    if (table == NULL || count == 0u || count > HOST_CMD_MAX)
     {
         return ERR_INVAL;
     }
     for (uint8_t index = 0; index < count; index++)
     {
-        if (table[index].length > VISION_PAYLOAD_MAX || (table[index].length != 0u && table[index].cache == NULL))
+        if ((table[index].direction != HOST_SEND && table[index].direction != HOST_RECV) ||
+            table[index].length > HOST_PAYLOAD_MAX ||
+            (table[index].length != 0u && table[index].cache == NULL))
         {
             return ERR_INVAL;
         }
@@ -59,6 +62,7 @@ int32_t vision_bind(const vision_packet_t *table, uint8_t count)
             return ERR_INVAL;
         }
         packets[index].command = table[index].command;
+        packets[index].direction = table[index].direction;
         packets[index].length = table[index].length;
         packets[index].cache = table[index].cache;
         packets[index].seen = false;
@@ -67,28 +71,22 @@ int32_t vision_bind(const vision_packet_t *table, uint8_t count)
     return ERR_OK;
 }
 
-int32_t vision_write(uint8_t command, const void *payload, uint8_t length)
+static int32_t host_send(host_slot_t *slot, const void *payload, uint8_t length)
 {
-    vision_slot_t *slot = find_packet(command);
-
-    if (slot == NULL || length != slot->length || (payload == NULL && length != 0u))
-    {
-        return ERR_INVAL;
-    }
     if (!bsp_usb_connected())
     {
         return ERR_NODEV;
     }
 
-    uint8_t frame[VISION_MAX_FRAME];
-    uint32_t frame_length = VISION_HEADER_LENGTH + (uint32_t)length + VISION_CRC_LENGTH;
+    uint8_t frame[HOST_MAX_FRAME];
+    uint32_t frame_length = HOST_HEADER_LENGTH + (uint32_t)length + HOST_CRC_LENGTH;
 
-    frame[0] = VISION_SOF;
+    frame[0] = HOST_SOF;
     frame[1] = length;
-    frame[2] = command;
+    frame[2] = slot->command;
     if (length != 0u)
     {
-        memcpy(frame + VISION_HEADER_LENGTH, payload, length);
+        memcpy(frame + HOST_HEADER_LENGTH, payload, length);
     }
     crc16_append(frame, frame_length);
 
@@ -105,22 +103,39 @@ int32_t vision_write(uint8_t command, const void *payload, uint8_t length)
     return (queued == (int32_t)frame_length) ? ERR_OK : ERR_BUSY;
 }
 
-bool vision_read(uint8_t command, void *payload, uint8_t length)
+static int32_t host_recv(host_slot_t *slot, void *payload, uint8_t length)
 {
     uint32_t irq_key = os_irq_save();
-    vision_slot_t *slot = find_packet(command);
-    bool ok = slot != NULL && slot->seen && length == slot->length &&
-              (length == 0u || (payload != NULL && slot->cache != NULL));
+    bool ok = slot->seen && (length == 0u || (payload != NULL && slot->cache != NULL));
 
     if (ok && length != 0u)
     {
         memcpy(payload, slot->cache, length);
     }
     os_irq_restore(irq_key);
-    return ok;
+    return ok ? ERR_OK : ERR_TIMEOUT;
 }
 
-void vision_get_link(vision_link_t *out)
+int32_t host_transfer(uint8_t command, void *payload, uint8_t length)
+{
+    host_slot_t *slot = find_packet(command);
+
+    if (slot == NULL || length != slot->length || (payload == NULL && length != 0u))
+    {
+        return ERR_INVAL;
+    }
+    if (slot->direction == HOST_SEND)
+    {
+        return host_send(slot, payload, length);
+    }
+    if (slot->direction == HOST_RECV)
+    {
+        return host_recv(slot, payload, length);
+    }
+    return ERR_INVAL;
+}
+
+void host_get_link(host_link_t *out)
 {
     uint32_t irq_key = os_irq_save();
 
@@ -144,11 +159,11 @@ static void drop_bytes(uint32_t count)
 
 static void accept_frame(uint8_t command, const uint8_t *payload, uint8_t length)
 {
-    vision_slot_t *slot = find_packet(command);
+    host_slot_t *slot = find_packet(command);
     uint32_t irq_key = os_irq_save();
 
     link.online = true;
-    if (slot == NULL || length != slot->length)
+    if (slot == NULL || slot->direction != HOST_RECV || length != slot->length)
     {
         link.bad_frames++;
         os_irq_restore(irq_key);
@@ -168,32 +183,32 @@ static void parse_stream(void)
 {
     while (stream_count > 0u)
     {
-        if (stream[0] != VISION_SOF)
+        if (stream[0] != HOST_SOF)
         {
             uint32_t skip = 1u;
 
-            while (skip < stream_count && stream[skip] != VISION_SOF)
+            while (skip < stream_count && stream[skip] != HOST_SOF)
             {
                 skip++;
             }
             drop_bytes(skip);
             continue;
         }
-        if (stream_count < VISION_HEADER_LENGTH)
+        if (stream_count < HOST_HEADER_LENGTH)
         {
             return;
         }
 
         uint8_t payload_length = stream[1];
 
-        if (payload_length > VISION_PAYLOAD_MAX)
+        if (payload_length > HOST_PAYLOAD_MAX)
         {
             note_bad_frame();
             drop_bytes(1u);
             continue;
         }
 
-        uint32_t frame_length = VISION_HEADER_LENGTH + (uint32_t)payload_length + VISION_CRC_LENGTH;
+        uint32_t frame_length = HOST_HEADER_LENGTH + (uint32_t)payload_length + HOST_CRC_LENGTH;
 
         if (stream_count < frame_length)
         {
@@ -205,12 +220,12 @@ static void parse_stream(void)
             drop_bytes(1u);
             continue;
         }
-        accept_frame(stream[2], stream + VISION_HEADER_LENGTH, payload_length);
+        accept_frame(stream[2], stream + HOST_HEADER_LENGTH, payload_length);
         drop_bytes(frame_length);
     }
 }
 
-static void vision_run(void *argument, const uint8_t *data, uint16_t len)
+static void host_run(void *argument, const uint8_t *data, uint16_t len)
 {
     (void)argument;
     if (data == NULL)
@@ -222,7 +237,7 @@ static void vision_run(void *argument, const uint8_t *data, uint16_t len)
         stream_count = 0u;
         return;
     }
-    if (len > VISION_STREAM_SIZE - stream_count)
+    if (len > HOST_STREAM_SIZE - stream_count)
     {
         stream_count = 0u;
         note_bad_frame();
@@ -231,31 +246,31 @@ static void vision_run(void *argument, const uint8_t *data, uint16_t len)
     stream_count += len;
     parse_stream();
 }
-EVENT_TASK_DEFINE(vision_task, OS_PRIORITY_MEDIUM, OS_STACK_MEDIUM, EVENT_QUEUE, VISION_RX_BLOCK_MAX, OS_QUEUE_LEN_8,
-                  OS_TIMEOUT_200MS, vision_run, NULL);
+EVENT_TASK_DEFINE(host_task, OS_PRIORITY_MEDIUM, OS_STACK_MEDIUM, EVENT_QUEUE, HOST_RX_BLOCK_MAX, OS_QUEUE_LEN_8,
+                  OS_TIMEOUT_200MS, host_run, NULL);
 
-#define VISION_DEFINE(name, id, type)   static type vision_##name;
-VISION_PACKET_TABLE(VISION_DEFINE)
-#undef VISION_DEFINE
+#define HOST_DEFINE(name, id, direction, type)   static type host_##name;
+HOST_PACKET_TABLE(HOST_DEFINE)
+#undef HOST_DEFINE
 
-#define VISION_ROW(name, id, type) \
-    { (id), (uint8_t)sizeof(vision_##name), &vision_##name },
+#define HOST_ROW(name, id, direction, type) \
+    { (id), (direction), (uint8_t)sizeof(host_##name), &host_##name },
 
-static const vision_packet_t vision_packets[] =
+static const host_packet_t host_packets[] =
 {
-    VISION_PACKET_TABLE(VISION_ROW)
+    HOST_PACKET_TABLE(HOST_ROW)
 };
-#undef VISION_ROW
+#undef HOST_ROW
 
-static int32_t vision_init(void)
+static int32_t host_init(void)
 {
-    int32_t bind_result = vision_bind(vision_packets, (uint8_t)(sizeof vision_packets / sizeof vision_packets[0]));
+    int32_t bind_result = host_bind(host_packets, (uint8_t)(sizeof host_packets / sizeof host_packets[0]));
 
     if (bind_result != ERR_OK)
     {
         return bind_result;
     }
-    bsp_usb_bind_event(&vision_task);
+    bsp_usb_bind_event(&host_task);
     return ERR_OK;
 }
-INIT_CDD_STAGE1(vision_init);
+INIT_CDD_STAGE1(host_init);
