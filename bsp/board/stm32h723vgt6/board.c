@@ -11,21 +11,23 @@
 #include "usart.h"         /* huart1/2/5/7/10 */
 #include "bsp/uart/bsp_uart.h"
 
-/*                 接收DMA缓冲  发送分块  发送队列 */
+/*                       接收DMA缓冲  发送分块  发送队列。0 表示这个方向不分配 */
 BSP_UART_BUFFERS(referee,       256, 128,  512);
 BSP_UART_BUFFERS(interboard,    128, 128,  512);
-BSP_UART_BUFFERS(remote,        36,  1,      2);        /* 遥控器只收，发送缓冲占位 */
-BSP_UART_BUFFERS(imgtrans,      512, 128,  512);
-BSP_UART_BUFFERS(log,           16,  128, 2048);        /* 日志口：主要是发；RX 只给 shell 用 */
+BSP_UART_BUFFERS(remote,         36,   0,    0);           /* 只收 */
+BSP_UART_BUFFERS(imgtrans,      512,   0,    0);           /* 只收 */
+BSP_UART_BUFFERS(vofa,            0, 128,  512);           /* 只发 */
+BSP_UART_BUFFERS(log,            16, 128, 2048);           /* 主要是发；RX 只给 shell 用 */
 
 const bsp_uart_cfg_t board_uart_cfg[UART_NUM] =
 {
-    /* 逻辑口                        名称           句柄      接收使能 */
-    [UART_IMGTRANS]   = BSP_UART_CFG(imgtrans,      &huart1,  1),            /* USART1 PA9/PA10，921600 */
-    [UART_INTERBOARD] = BSP_UART_CFG(interboard,    &huart2,  1),            /* USART2 PD5/PD6，PD4 硬件 DE，921600，收发都走 DMA */
-    [UART_REMOTE]     = BSP_UART_CFG(remote,        &huart5,  1),
-    [UART_REFEREE]    = BSP_UART_CFG(referee,       &huart7,  1),            /* UART7 PE7/PE8，115200 */
-    [UART_LOG]        = BSP_UART_CFG(log,           &huart10, 1),
+    /* 逻辑口                        名称           句柄      收  发 */
+    [UART_IMGTRANS]   = BSP_UART_CFG(imgtrans,      &huart1,  1, 0),   /* USART1 PA10。和 VOFA 共用 huart1，Cube 只初始化一次 */
+    [UART_VOFA]       = BSP_UART_CFG(vofa,          &huart1,  0, 1),   /* USART1 PA9 */
+    [UART_INTERBOARD] = BSP_UART_CFG(interboard,    &huart2,  1, 1),   /* USART2 PD5/PD6，PD4 硬件 DE，921600，收发都走 DMA */
+    [UART_REMOTE]     = BSP_UART_CFG(remote,        &huart5,  1, 0),
+    [UART_REFEREE]    = BSP_UART_CFG(referee,       &huart7,  1, 1),   /* UART7 PE7/PE8，115200 */
+    [UART_LOG]        = BSP_UART_CFG(log,           &huart10, 1, 1),
 };
 #endif
 
@@ -67,7 +69,7 @@ INIT_BSP_STAGE1(board_spi_pins_init);
 
 /* ---- PWM ---- */
 #ifdef CONFIG_BSP_PWM
-#include "tim.h"           /* htim3/12 */
+#include "tim.h"           /* htim1/3/12 */
 #include "bsp/pwm/bsp_pwm.h"
 
 const bsp_pwm_cfg_t board_pwm_cfg[PWM_NUM] =
@@ -75,6 +77,8 @@ const bsp_pwm_cfg_t board_pwm_cfg[PWM_NUM] =
     /* 逻辑口             定时器句柄, 通道,          定时器时钟(Hz) */
     [PWM_HEATER] = { &htim3,  TIM_CHANNEL_4, 240000000u },   /* PB1  TIM3_CH4  */
     [PWM_BUZZER] = { &htim12, TIM_CHANNEL_2, 240000000u },   /* PB15 TIM12_CH2 */
+    /* TIM1：Cube 里预分频 240-1、周期 20000-1，脉宽单位才是微秒 */
+    [PWM_SERVO] = { &htim1,  TIM_CHANNEL_1, 240000000u },   /* PE9  TIM1_CH1 */
 };
 #endif
 

@@ -4,16 +4,36 @@
 
 static bsp_uart_state_t uart_states[UART_NUM];
 
-static int uart_find(const UART_HandleTypeDef *huart)
+/* 同一个 huart 可以挂两个逻辑口：一个只收，一个只发。HAL 句柄只由 Cube 初始化一次。 */
+static int uart_find_rx(const UART_HandleTypeDef *huart)
 {
     for (int uart_index = 0; uart_index < UART_NUM; uart_index++)
     {
-        if (board_uart_cfg[uart_index].huart == huart)
+        if (board_uart_cfg[uart_index].huart == huart && board_uart_cfg[uart_index].rx_size != 0u)
         {
             return uart_index;
         }
     }
     return -1;
+}
+
+static int uart_find_tx(const UART_HandleTypeDef *huart)
+{
+    int fallback = -1;
+
+    for (int uart_index = 0; uart_index < UART_NUM; uart_index++)
+    {
+        if (board_uart_cfg[uart_index].huart != huart || board_uart_cfg[uart_index].tx_size == 0u)
+        {
+            continue;
+        }
+        if (uart_states[uart_index].tx_busy)
+        {
+            return uart_index;
+        }
+        fallback = uart_index;
+    }
+    return fallback;
 }
 
 /* RX 是否为循环 DMA：由 CubeMX 里该 DMA 请求的 Mode 决定（Normal / Circular） */
@@ -70,7 +90,7 @@ static void rx_push(int id, const uint8_t *data, uint16_t length)
 /* HAL 在"空闲线 / 缓冲半满 / 缓冲满"时调用；size = 缓冲区里目前已有的字节数 */
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
 {
-    int id = uart_find(huart);
+    int id = uart_find_rx(huart);
 
     if (id < 0)
     {
@@ -136,7 +156,7 @@ static void tx_kick(int id)
 /* 最后一个停止位发完（TC）后 HAL 才调用；DMA 与中断发送都是如此 */
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
-    int id = uart_find(huart);
+    int id = uart_find_tx(huart);
 
     if (id < 0)
     {
@@ -149,27 +169,35 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 /* 溢出/帧错误/奇偶错误：HAL 已中止传输，这里计数并重启 */
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
-    int id = uart_find(huart);
+    int rx_id = uart_find_rx(huart);
+    int tx_id = uart_find_tx(huart);
 
-    if (id < 0)
+    if (rx_id < 0 && tx_id < 0)
     {
         return;
     }
-    uart_states[id].error_count++;
-    if (huart->gState == HAL_UART_STATE_READY)
+    if (tx_id >= 0)
     {
-        uart_states[id].tx_busy = 0u;
+        uart_states[tx_id].error_count++;
+        if (huart->gState == HAL_UART_STATE_READY)
+        {
+            uart_states[tx_id].tx_busy = 0u;
+        }
     }
-    if (huart->RxState == HAL_UART_STATE_READY && board_uart_cfg[id].rx_size != 0u)
+    if (rx_id >= 0 && rx_id != tx_id)
     {
-        rx_start(id);
+        uart_states[rx_id].error_count++;
+    }
+    if (rx_id >= 0 && huart->RxState == HAL_UART_STATE_READY)
+    {
+        rx_start(rx_id);
     }
 }
 
 /* ---------------- 对外接口 ---------------- */
 int32_t bsp_uart_write(uart_id_e id, const void *data, uint32_t len)
 {
-    if ((unsigned)id >= UART_NUM)
+    if ((unsigned)id >= UART_NUM || board_uart_cfg[id].tx_size == 0u)
     {
         return ERR_INVAL;
     }
@@ -202,13 +230,41 @@ static int32_t bsp_uart_init(void)
     {
         const bsp_uart_cfg_t *config = &board_uart_cfg[uart_index];
 
-        if (cqueue_init(&uart_states[uart_index].tx_queue, config->tx_queue_mem, config->tx_queue_size, 1u) != ERR_OK)
+        if (config->tx_size != 0u)
         {
-            ret = ERR_INVAL;                     /* 队列大小不是 2 的幂：立刻报错，不要静默 */
-            continue;
+            bool tx_taken = false;
+
+            for (int previous = 0; previous < uart_index; previous++)
+            {
+                if (board_uart_cfg[previous].huart == config->huart && board_uart_cfg[previous].tx_size != 0u)
+                {
+                    tx_taken = true;
+                    break;
+                }
+            }
+            if (tx_taken || cqueue_init(&uart_states[uart_index].tx_queue, config->tx_queue_mem, config->tx_queue_size, 1u) != ERR_OK)
+            {
+                ret = ERR_INVAL;                 /* 同一个 huart 只能有一个发送口，队列大小也必须是 2 的幂 */
+                continue;
+            }
         }
         if (config->rx_size != 0u)
         {
+            bool rx_taken = false;
+
+            for (int previous = 0; previous < uart_index; previous++)
+            {
+                if (board_uart_cfg[previous].huart == config->huart && board_uart_cfg[previous].rx_size != 0u)
+                {
+                    rx_taken = true;
+                    break;
+                }
+            }
+            if (rx_taken)
+            {
+                ret = ERR_INVAL;                 /* 同一个 huart 只能启动一次接收 */
+                continue;
+            }
             rx_start(uart_index);
         }
     }

@@ -33,22 +33,51 @@ typedef struct
     uint32_t error_count;
 } bsp_uart_state_t;
 
-/* 每个串口三块缓冲 + 一个配置项。DMA 缓冲和软件发送队列都放 RAM_D1（不可缓存）。
- * 接收没有软件队列：每次收到的数据块直接投递给事件任务（bsp_uart_bind_event） */
-#define BSP_UART_BUFFERS(_name, _rx_size, _tx_size, _tx_queue_size)                           \
-    static uint8_t _name##_rx_buffer[_rx_size]  SRAM_NONCACHEABLE;                          \
-    static uint8_t _name##_tx_buffer[_tx_size]  SRAM_NONCACHEABLE;                          \
+/* 每个方向一块缓冲。DMA 缓冲和软件发送队列都放 RAM_D1（不可缓存）。
+ * 接收没有软件队列：每次收到的数据块直接投递给事件任务（bsp_uart_bind_event）。
+ * 尺寸写 0 的方向不分配缓冲。 */
+#define BSP_UART_IS_ZERO(x)        BSP_UART_IS_ZERO_I(BSP_UART_ZERO_##x)
+#define BSP_UART_IS_ZERO_I(x)      BSP_UART_IS_ZERO_II(x, 0, )
+#define BSP_UART_IS_ZERO_II(a, b, ...) b
+#define BSP_UART_ZERO_0            ~, 1
+#define BSP_UART_RX_DECL_0(_name, _rx_size) \
+    static uint8_t _name##_rx_buffer[_rx_size] SRAM_NONCACHEABLE
+#define BSP_UART_RX_DECL_1(_name, _rx_size)
+#define BSP_UART_RX_DECL(_zero, _name, _rx_size) BSP_UART_RX_DECL_I(_zero, _name, _rx_size)
+#define BSP_UART_RX_DECL_I(_zero, _name, _rx_size) BSP_UART_RX_DECL_##_zero(_name, _rx_size)
+#define BSP_UART_TX_DECL_0(_name, _tx_size, _tx_queue_size) \
+    static uint8_t _name##_tx_buffer[_tx_size] SRAM_NONCACHEABLE; \
     static uint8_t _name##_tx_queue_mem[_tx_queue_size] SRAM_NONCACHEABLE
-/* _rx_enable = 0：该口只发不收（rx_size 配 0，初始化时不启动接收） */
-#define BSP_UART_CFG(_name, _huart, _rx_enable)                                              \
-    {                                                                                    \
-        (_huart),                                                                        \
-        _name##_rx_buffer,                                                                  \
-        (_rx_enable) ? sizeof _name##_rx_buffer : 0u,                                       \
-        _name##_tx_buffer,                                                                  \
-        sizeof _name##_tx_buffer,                                                           \
-        _name##_tx_queue_mem,                                                                 \
-        sizeof _name##_tx_queue_mem,                                                          \
+#define BSP_UART_TX_DECL_1(_name, _tx_size, _tx_queue_size)
+#define BSP_UART_TX_DECL(_zero, _name, _tx_size, _tx_queue_size) \
+    BSP_UART_TX_DECL_I(_zero, _name, _tx_size, _tx_queue_size)
+#define BSP_UART_TX_DECL_I(_zero, _name, _tx_size, _tx_queue_size) \
+    BSP_UART_TX_DECL_##_zero(_name, _tx_size, _tx_queue_size)
+#define BSP_UART_BUFFERS(_name, _rx_size, _tx_size, _tx_queue_size) \
+    BSP_UART_RX_DECL(BSP_UART_IS_ZERO(_rx_size), _name, _rx_size); \
+    BSP_UART_TX_DECL(BSP_UART_IS_ZERO(_tx_size), _name, _tx_size, _tx_queue_size)
+/* 后两个参数是接收使能、发送使能，只能写 0 或 1。关着的方向 size 为 0，初始化时不启动。 */
+#define BSP_UART_CFG(_name, _huart, _rx_enable, _tx_enable)                                   \
+    BSP_UART_CFG_##_rx_enable##_##_tx_enable(_name, _huart)
+#define BSP_UART_CFG_1_1(_name, _huart)                                                       \
+    {                                                                                         \
+        (_huart),                                                                             \
+        _name##_rx_buffer, sizeof _name##_rx_buffer,                                          \
+        _name##_tx_buffer, sizeof _name##_tx_buffer,                                          \
+        _name##_tx_queue_mem, sizeof _name##_tx_queue_mem,                                    \
+    }
+#define BSP_UART_CFG_1_0(_name, _huart)                                                       \
+    {                                                                                         \
+        (_huart),                                                                             \
+        _name##_rx_buffer, sizeof _name##_rx_buffer,                                          \
+        NULL, 0u, NULL, 0u,                                                                   \
+    }
+#define BSP_UART_CFG_0_1(_name, _huart)                                                       \
+    {                                                                                         \
+        (_huart),                                                                             \
+        NULL, 0u,                                                                             \
+        _name##_tx_buffer, sizeof _name##_tx_buffer,                                          \
+        _name##_tx_queue_mem, sizeof _name##_tx_queue_mem,                                    \
     }
 
 extern const bsp_uart_cfg_t board_uart_cfg[UART_NUM];    /* 由 board.c 提供 */

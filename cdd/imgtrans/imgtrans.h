@@ -2,7 +2,8 @@
 #define CDD_IMGTRANS_H__
 #include "component/common/types.h"
 
-/* VT03 图传链路遥控器（UART_IMGTRANS，21 字节一帧，帧头 0xA9 0x53，整帧 CRC16）。
+/* VT03 图传链路遥控器（UART_IMGTRANS，只收，21 字节一帧，帧头 0xA9 0x53，整帧 CRC16）。
+ * 和 UART_VOFA 共用 USART1，这里不发送。
  * 通道顺序和 dt7 一致：右横、右竖、左横、左竖，已减中值。
  * 离线（100 ms 没收到合法帧）时 online = false，除计数外所有控制量清零。
  * 哪个遥控器生效由应用层决定，这里不看 dt7 的在线状态。 */
