@@ -1,10 +1,13 @@
-/* 底盘：CAN2 四个 m3508，麦克纳姆，另有一台 MF9025。左摇杆平移，拨轮只开关恒定自旋。 */
+/* 底盘：CAN2 四个 m3508，麦克纳姆，另有一台 MF9025 和一个超级电容。左摇杆平移，拨轮只开关恒定自旋。 */
 #include "osal/period.h"
 #include "component/common/initcall.h"
 #include "component/common/err.h"
 #include "cdd/remote/dt7/dt7.h"
 #include "cdd/motor/motor_init.h"
+#include "cdd/supercap/supercap.h"
+#include "cdd/referee/referee.h"
 #include "chassis_config.h"
+#include "supercap_config.h"
 
 #define CHASSIS_STICK_MAX       660.0f
 #define CHASSIS_STICK_IGNORE    20
@@ -37,6 +40,8 @@ static int32_t chassis_ctrl_init(void)
     }
     (void)lk_motor_run(&mf9025);
     motor_set_active(&mf9025.base, true);
+    supercap_enable(true);
+    supercap_set_referee(SUPERCAP_POWER_W, SUPERCAP_BUFFER_J);
     return ERR_OK;
 }
 INIT_APP_STAGE2(chassis_ctrl_init);
@@ -72,5 +77,15 @@ static void chassis_ctrl_run(void *argument)
     }
     (void)motor_compute_bus(CAN_BUS1);
     (void)motor_send_bus(CAN_BUS1);
+    {
+        static referee_info_t referee;
+
+        referee_get(&referee);
+        if (referee.online && referee.performance.chassis_power_limit != 0u)
+        {
+            supercap_set_referee(referee.performance.chassis_power_limit, referee.power_heat.buffer_energy);
+        }
+    }
+    (void)supercap_send();
 }
 PERIOD_TASK_DEFINE(chassis_ctrl_task, OS_FREQ_1000HZ, OS_PRIORITY_MEDIUM, OS_STACK_MEDIUM, chassis_ctrl_run, NULL);

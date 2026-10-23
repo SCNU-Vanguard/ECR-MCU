@@ -7,6 +7,7 @@ subdir-$(CONFIG_CDD_BUZZER) += buzzer
 subdir-$(CONFIG_CDD_SERVO) += servo
 subdir-$(CONFIG_CDD_VOFA) += vofa
 subdir-$(CONFIG_CDD_REFEREE) += referee
+subdir-$(CONFIG_CDD_SUPERCAP) += supercap
 subdir-$(CONFIG_CDD_IMGTRANS) += imgtrans
 subdir-$(CONFIG_CDD_HOST) += host
 subdir-$(CONFIG_CDD_INTERBOARD) += interboard
