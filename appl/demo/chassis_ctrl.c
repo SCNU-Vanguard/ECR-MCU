@@ -1,4 +1,4 @@
-/* 底盘：CAN2 四个 m3508，麦克纳姆。左摇杆平移，拨轮只开关恒定自旋。 */
+/* 底盘：CAN2 四个 m3508，麦克纳姆，另有一台 MF9025。左摇杆平移，拨轮只开关恒定自旋。 */
 #include "osal/period.h"
 #include "component/common/initcall.h"
 #include "component/common/err.h"
@@ -35,6 +35,8 @@ static int32_t chassis_ctrl_init(void)
     {
         motor_set_active(&chassis_wheel[wheel_index]->base, true);
     }
+    (void)lk_motor_run(&mf9025);
+    motor_set_active(&mf9025.base, true);
     return ERR_OK;
 }
 INIT_APP_STAGE2(chassis_ctrl_init);

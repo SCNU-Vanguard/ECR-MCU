@@ -18,4 +18,11 @@ ROBOT_DM_MOTOR_CONFIG_TABLE(ROBOT_DECLARE_DM_MOTOR)
 #undef ROBOT_DECLARE_DM_MOTOR
 #endif
 
+#ifdef CONFIG_CDD_MOTOR_LK_MOTOR
+#include "cdd/motor/lk_motor/lk_motor.h"
+#define ROBOT_DECLARE_LK_MOTOR(_name, ...)     extern lk_motor_t _name;
+ROBOT_LK_MOTOR_CONFIG_TABLE(ROBOT_DECLARE_LK_MOTOR)
+#undef ROBOT_DECLARE_LK_MOTOR
+#endif
+
 #endif

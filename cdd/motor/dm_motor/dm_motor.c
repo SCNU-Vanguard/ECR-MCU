@@ -22,7 +22,7 @@
  * 控制帧（ID = 模式偏移 + tx_id；TORQUE 的偏移按 MIT，即 ID = tx_id）：
  *   MIT 0x000：p_des(16) v_des(12) Kp(12) Kd(12) t_ff(12) 依次位拼接，共 8 字节
  *              p_des ±p_max，v_des ±v_max，Kp 0..500，Kd 0..5，t_ff ±t_max
- *   TORQUE：   帧格式与 MIT 相同。Kp、Kd 填 0，t_ff 为软件 PID 转矩。电机上位机模式仍是 MIT
+ *   TORQUE：   帧格式与 MIT 相同。Kp、Kd 填 0，t_ff 取 output。电机上位机模式仍是 MIT
  *   位置速度 0x100：p_des(float 小端) v_des(float 小端)，8 字节
  *   速度 0x200：v_des(float 小端)，4 字节
  *   力位混合 0x300：p_des(float 小端) v_des(u16 小端，rad/s x100，0..10000) i_des(u16 小端，标幺 x10000，0..10000)，8 字节 */
@@ -281,8 +281,8 @@ static float angle_target_to_motor(const dm_motor_t *motor)
     return sign * limit_value(target, -motor->p_max, motor->p_max);
 }
 
-/* Kp = Kd = 0，t_ff 取软件级联 PID。没有控制配置时保持 set_hold 留下的空帧 */
-static void compute_torque(dm_motor_t *motor)
+/* Kp = Kd = 0，t_ff 取 output。没有控制配置时保持 set_hold 留下的空帧 */
+static void compute_output(dm_motor_t *motor)
 {
     motor_t *base = &motor->base;
 
@@ -296,7 +296,7 @@ static void compute_torque(dm_motor_t *motor)
     {
         reference = motor_angle_loop(base, reference);
     }
-    if (base->control_mode != MOTOR_CONTROL_TORQUE)
+    if (base->control_mode != MOTOR_CONTROL_OUTPUT)
     {
         reference = motor_speed_loop(base, reference);
     }
@@ -312,8 +312,9 @@ static void compute_mit(dm_motor_t *motor)
     set_hold(motor);
     switch (base->control_mode)
     {
-        case MOTOR_CONTROL_TORQUE:
-            motor->cmd_torque = sign * (base->target + motor_output_feedforward(base));
+        case MOTOR_CONTROL_OUTPUT:
+            base->output = base->target + motor_output_feedforward(base);
+            motor->cmd_from_output = true;
             break;
         case MOTOR_CONTROL_SPEED:
             motor->cmd_velocity = sign * (base->target + motor_speed_feedforward(base));
@@ -347,7 +348,7 @@ void dm_motor_compute(dm_motor_t *motor)
             compute_mit(motor);
             break;
         case DM_MOTOR_MODE_TORQUE:
-            compute_torque(motor);
+            compute_output(motor);
             break;
         case DM_MOTOR_MODE_POSITION_SPEED:
             if (base->control_mode == MOTOR_CONTROL_ANGLE)

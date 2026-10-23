@@ -7,9 +7,9 @@
 /* dm_motor（达妙 j4310 / j8009p / s3519）的硬件控制模式。除 TORQUE 外，枚举值就是控制帧 ID 相对 tx_id 的偏移，
  * 要和电机上位机里设置的控制模式一致。
  *   MIT：          ID = tx_id        运控：p_des、v_des、Kp、Kd、t_ff，电机内部 t = Kp(p_des-p) + Kd(v_des-v) + t_ff
- *   TORQUE：       ID = tx_id        仍是 MIT 帧。Kp = Kd = 0，t_ff 为软件级联 PID 的转矩（N·m）。
+ *   TORQUE：       ID = tx_id        仍是 MIT 帧。Kp = Kd = 0，t_ff 取 motor_t::output（N·m）。
  *                                    电机上位机里的模式选 MIT，不存在单独的转矩协议模式。
- *                                    转矩经过 motor_t::output，发送前应用层可修改，需要有控制配置
+ *                                    发送前应用层可以改 output，需要有控制配置
  *   POSITION_SPEED：ID = 0x100+tx_id  位置速度：目标位置 + 速度上限，电机内部闭环
  *   SPEED：         ID = 0x200+tx_id  速度：目标速度，电机内部闭环
  *   FORCE_POSITION：ID = 0x300+tx_id  力位混合：目标位置 + 速度上限 + 电流上限，电机内部闭环 */
@@ -70,7 +70,7 @@ typedef struct
     float          cmd_kd;
     float          cmd_torque;
     float          cmd_current_limit;
-    bool           cmd_from_output;  /* true：cmd_torque 在发送时取自 base.output（软件转矩，发送前应用层可改） */
+    bool           cmd_from_output;  /* true：发送时 t_ff 取 base.output，不取 cmd_torque */
     /* 反馈：在事件任务 dm_motor_task 里更新（中断只拷贝帧） */
     uint8_t        state;            /* 电机状态码：0 失能 1 使能 8 超压 9 欠压 A 过流 B MOS过温 C 线圈过温 D 通信丢失 E 过载 */
     float          position;         /* 协议位置，rad，未应用 reverse。直驱型号即输出轴；s3519 是减速前的电机侧 */
@@ -92,8 +92,8 @@ int32_t dm_motor_set_zero(dm_motor_t *motor);        /* 把当前位置设为零
 int32_t dm_motor_clear_error(dm_motor_t *motor);     /* 清除故障（如过热） */
 
 /* 计算：按"硬件模式 x 控制模式"算出待发送的控制量（cmd_xxx）：
- *   MIT            TORQUE/SPEED/ANGLE -> t_ff / v_des+Kd / p_des+Kp+Kd（Kp、Kd 用配置里的值，电机内部闭环）
- *   TORQUE         级联 PID -> t_ff（Kp = Kd = 0），转矩放在 base.output 里，发送前应用层可以改它
+ *   MIT            OUTPUT/SPEED/ANGLE -> t_ff（取 output）/ v_des+Kd / p_des+Kp+Kd（Kp、Kd 用配置里的值，电机内部闭环）
+ *   TORQUE         级联结果写入 base.output，再作为 t_ff 发出（Kp = Kd = 0）
  *   POSITION_SPEED ANGLE -> p_des + speed_limit
  *   SPEED          SPEED -> v_des；ANGLE -> 软件角度环输出 v_des
  *   FORCE_POSITION ANGLE -> p_des + speed_limit + current_limit

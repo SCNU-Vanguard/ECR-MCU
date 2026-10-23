@@ -111,6 +111,51 @@ static int32_t bind_dm_motor(const char *name, dm_motor_t *motor, const dm_motor
     }
 #endif
 
+#ifdef CONFIG_CDD_MOTOR_LK_MOTOR
+#define ROBOT_LK_MOTOR_CONTROL(_name, _mode, _akp, _aki, _akd, _akf, _aout, _aint, _aff, _adb, \
+                         _skp, _ski, _skd, _skf, _sout, _sint, _sff, _sdb) \
+    static const motor_control_config_t _name##_control =                                                 \
+    {                                                                                                     \
+        .mode = (_mode),                                                                                  \
+        .angle_pid = { _akp, _aki, _akd, _akf, _aout, _aint, _aff, _adb },                                \
+        .speed_pid = { _skp, _ski, _skd, _skf, _sout, _sint, _sff, _sdb },                                \
+    };
+ROBOT_LK_MOTOR_CONTROL_TABLE(ROBOT_LK_MOTOR_CONTROL)
+#undef ROBOT_LK_MOTOR_CONTROL
+#define ROBOT_DEFINE_LK_MOTOR(_name, ...)     lk_motor_t _name;
+ROBOT_LK_MOTOR_CONFIG_TABLE(ROBOT_DEFINE_LK_MOTOR)
+
+__attribute__((unused))
+static int32_t bind_lk_motor(const char *name, lk_motor_t *motor, const lk_motor_config_t *config)
+{
+    int32_t register_ret = lk_motor_register(motor, config);
+
+    if (register_ret != ERR_OK)
+    {
+        LOGE("bind lk motor %s failed: %d", name, (int)register_ret);
+    }
+    return register_ret;
+}
+
+#define ROBOT_BIND_LK_MOTOR(_name, _bus, _id, _reverse, _timeout_ms, _control)                   \
+    {                                                                                            \
+        const lk_motor_config_t config =                                                         \
+        {                                                                                        \
+            .bus        = (_bus),                                                                \
+            .id         = (_id),                                                                 \
+            .reverse    = (_reverse),                                                            \
+            .timeout_ms = (_timeout_ms),                                                         \
+            .control    = (_control),                                                            \
+        };                                                                                       \
+                                                                                                 \
+        register_ret = bind_lk_motor(#_name, &_name, &config);                                   \
+        if (register_ret != ERR_OK)                                                              \
+        {                                                                                        \
+            return register_ret;                                                                 \
+        }                                                                                        \
+    }
+#endif
+
 static int32_t motor_bind_init(void)
 {
     int32_t register_ret = ERR_OK;
@@ -120,6 +165,9 @@ static int32_t motor_bind_init(void)
 #endif
 #ifdef CONFIG_CDD_MOTOR_DM_MOTOR
     ROBOT_DM_MOTOR_CONFIG_TABLE(ROBOT_BIND_DM_MOTOR)
+#endif
+#ifdef CONFIG_CDD_MOTOR_LK_MOTOR
+    ROBOT_LK_MOTOR_CONFIG_TABLE(ROBOT_BIND_LK_MOTOR)
 #endif
     return register_ret;
 }

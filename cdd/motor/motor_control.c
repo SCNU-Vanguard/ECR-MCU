@@ -9,6 +9,9 @@
 #ifdef CONFIG_CDD_MOTOR_DM_MOTOR
 #include "cdd/motor/dm_motor/dm_motor.h"
 #endif
+#ifdef CONFIG_CDD_MOTOR_LK_MOTOR
+#include "cdd/motor/lk_motor/lk_motor.h"
+#endif
 
 int32_t motor_compute(motor_t *motor)
 {
@@ -32,6 +35,11 @@ int32_t motor_compute(motor_t *motor)
             dm_motor_compute((dm_motor_t *)motor);
             return ERR_OK;
 #endif
+#ifdef CONFIG_CDD_MOTOR_LK_MOTOR
+        case MOTOR_TYPE_MF9025:
+            lk_motor_compute((lk_motor_t *)motor);
+            return ERR_OK;
+#endif
         default:
             return ERR_INVAL;
     }
@@ -51,6 +59,9 @@ int32_t motor_compute_bus(can_id_e bus)
 #ifdef CONFIG_CDD_MOTOR_DM_MOTOR
     computed_count += dm_motor_compute_bus(bus);
 #endif
+#ifdef CONFIG_CDD_MOTOR_LK_MOTOR
+    computed_count += lk_motor_compute_bus(bus);
+#endif
     return computed_count;
 }
 
@@ -67,6 +78,9 @@ int32_t motor_send_bus(can_id_e bus)
 #endif
 #ifdef CONFIG_CDD_MOTOR_DM_MOTOR
     sent_count += dm_motor_send_bus(bus);
+#endif
+#ifdef CONFIG_CDD_MOTOR_LK_MOTOR
+    sent_count += lk_motor_send_bus(bus);
 #endif
     return sent_count;
 }

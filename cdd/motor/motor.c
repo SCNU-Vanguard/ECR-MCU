@@ -85,7 +85,7 @@ void motor_control_setup(motor_t *motor, const motor_control_config_t *config)
 {
     motor->has_control = (config != NULL);
     motor->active = false;
-    motor->control_mode = (config != NULL) ? config->mode : MOTOR_CONTROL_TORQUE;
+    motor->control_mode = (config != NULL) ? config->mode : MOTOR_CONTROL_OUTPUT;
     motor->target = 0.0f;
     motor_bind_angle_feedback(motor, NULL);
     motor_bind_speed_feedback(motor, NULL);

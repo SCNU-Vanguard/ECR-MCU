@@ -268,7 +268,7 @@ void dji_motor_compute(dji_motor_t *motor)
     {
         reference = motor_angle_loop(base, reference);
     }
-    if (base->control_mode != MOTOR_CONTROL_TORQUE)
+    if (base->control_mode != MOTOR_CONTROL_OUTPUT)
     {
         reference = motor_speed_loop(base, reference);
     }
@@ -301,7 +301,7 @@ int32_t dji_motor_compute_bus(can_id_e bus)
     return computed_count;
 }
 
-/* output（用户方向的转矩给定）-> cmd（电机方向、限幅后的原始值）。
+/* output（用户方向）-> cmd（电机方向、限幅后的原始值）。
  * 放在发送时做，这样应用层在计算和发送之间改 output（比如功率限制）也会生效 */
 static void convert_output(dji_motor_t *motor)
 {

@@ -21,15 +21,16 @@ typedef enum
     MOTOR_TYPE_J4310,
     MOTOR_TYPE_J8009P,
     MOTOR_TYPE_S3519,
+    MOTOR_TYPE_MF9025,
 } motor_type_e;
 
 /* 控制模式 = 最外层闭环：
- *   TORQUE：目标就是转矩给定（dji_motor：电流/电压原始值，dm_motor：N·m），不做速度环、位置环
- *   SPEED ：目标是转速 rad/s，速度环输出转矩给定
- *   ANGLE ：目标是角度 rad，角度环输出转速给定，再进速度环（dm_motor 的硬件位置模式由电机自己闭环，见 dm_motor.h） */
+ *   OUTPUT：目标直接作为 output，不做速度环、位置环。单位由驱动决定：dji 电流/电压原始值，dm N·m，lk iq 原始值
+ *   SPEED ：目标是转速 rad/s，速度环结果写入 output
+ *   ANGLE ：目标是角度 rad，角度环输出转速给定，再进速度环，结果写入 output（dm 的硬件位置模式由电机自己闭环，见 dm_motor.h） */
 typedef enum
 {
-    MOTOR_CONTROL_TORQUE,
+    MOTOR_CONTROL_OUTPUT,
     MOTOR_CONTROL_SPEED,
     MOTOR_CONTROL_ANGLE,
 } motor_control_mode_e;
@@ -42,12 +43,12 @@ typedef struct
     const float *angle_feedback;           /* 角度反馈 rad，默认电机单圈角度。角度环固定用单圈角度并把误差回绕到 ±pi */
     const float *speed_feedback;           /* 速度反馈 rad/s，默认电机自己的转速 */
     const float *speed_feedforward;        /* 速度前馈 rad/s，加在速度环给定上，默认 0 */
-    const float *output_feedforward;       /* 输出前馈，加在速度环输出上，单位与 motor_t::output 相同，默认 0 */
+    const float *output_feedforward;       /* 输出前馈，加在速度环结果上，一起写入 output，默认 0 */
 } motor_signals_t;
 
 /* 控制配置：模式在注册时写死。
- *   SPEED 只用速度环；ANGLE 是角度环输出串进速度环；TORQUE 两个环都不跑。
- * 运行时 motor_set_target 只改目标值，不改模式。传 NULL = 不用软件控制，模式保持 TORQUE */
+ *   SPEED 只用速度环；ANGLE 是角度环输出串进速度环；OUTPUT 两个环都不跑，目标就是 output。
+ * 运行时 motor_set_target 只改目标值，不改模式。传 NULL = 不用软件控制，模式保持 OUTPUT */
 typedef struct
 {
     motor_control_mode_e mode;
@@ -77,16 +78,16 @@ typedef struct
     float        single_angle_rad;         /* 单圈角度，[-pi, pi) */
     float        total_angle_rad;          /* 多圈累计角度，rad */
     float        speed_rad_s;              /* 转速，rad/s */
-    float        torque;                   /* 实际转矩：dji_motor 为反馈的电流原始值，dm_motor 为 N·m */
+    float        torque;                   /* 反馈量，不是控制输出。dji 为电流原始值，dm 为 N·m，lk 为 iq 原始值 */
     float        temperature;              /* 摄氏度（dji_motor：电机温度；dm_motor：转子温度） */
 
     /* 控制：由 motor_set_target / motor_set_active 修改，由 motor_compute / motor_compute_bus 使用 */
     bool                    has_control;   /* 注册时给了控制配置 */
     bool                    active;        /* false：输出清零/保持，控制器清零 */
-    bool                    hold_pending;  /* motor_set_active(true) 之后置位：第一次拿到有效反馈时，把目标设成当前位置（角度模式）或 0（速度/转矩模式），避免一打开输出就猛冲 */
+    bool                    hold_pending;  /* motor_set_active(true) 之后置位：第一次拿到有效反馈时，把目标设成当前位置（角度模式）或 0（速度/直接输出模式），避免一打开输出就猛冲 */
     motor_control_mode_e    control_mode;
     float                   target;
-    float                   output;        /* 级联计算的结果（转矩给定，用户方向，未应用 reverse）；dm_motor 仅软件转矩模式有意义。计算和发送之间应用层可以修改它（比如功率限制） */
+    float                   output;        /* 最终控制量，用户方向，未应用 reverse。计算和发送之间应用层可以修改它（比如功率限制） */
     motor_signals_t         signals;       /* 指针永远非空：默认指向电机自己的反馈和全局的 0 */
     pid_controller_t        angle_pid;
     pid_controller_t        speed_pid;
@@ -112,12 +113,12 @@ void motor_bind_angle_feedback(motor_t *motor, const float *angle_feedback);
 void motor_bind_speed_feedback(motor_t *motor, const float *speed_feedback);
 void motor_bind_speed_feedforward(motor_t *motor, const float *speed_feedforward);
 void motor_bind_output_feedforward(motor_t *motor, const float *output_feedforward);
-/* 设置目标值。单位由注册时写死的模式决定：角度 rad、转速 rad/s 或转矩给定。
+/* 设置目标值。单位由注册时写死的模式决定：角度 rad、转速 rad/s，或直接作为 output。
  * 没有控制配置的电机也能设置，但只有硬件自己闭环的模式（dm_motor 的 MIT 原生/位置速度/速度/力位混合）会生效，
  * 需要软件 PID 的组合没有控制配置时 dji_motor 输出 0，dm_motor 发保持帧 */
 int32_t motor_set_target(motor_t *motor, float target);
 /* 打开/关闭输出。关闭：dji_motor 发 0，dm_motor 发保持帧；同时清零两个 PID。
- * 打开：目标会在下一次计算、拿到有效反馈时自动重设为"当前角度"（角度模式）或 0（速度/转矩模式）；
+ * 打开：目标会在下一次计算、拿到有效反馈时自动重设为"当前角度"（角度模式）或 0（速度/直接输出模式）；
  * 在这之前（还没收到过反馈）输出为 0，所以上电后可以直接 motor_set_active(true) */
 void motor_set_active(motor_t *motor, bool active);
 /* 各厂家的 compute 里调用：有了第一次反馈才返回 true；返回 true 时若 hold_pending，先把目标重设为当前状态。返回 false 时该电机本周期输出 0 / 保持 */
@@ -125,7 +126,7 @@ bool motor_control_ready(motor_t *motor);
 
 /* 控制器的两个环，各厂家按自己电机的硬件能力选用（dji_motor / dm_motor 内部已经闭好电流/转矩环，所以软件不做转矩环）：
  *   角度环：目标角度 -> 速度给定（不含前馈）
- *   速度环：速度给定 + 速度前馈 -> 速度环输出（输出前馈由调用者用 motor_output_feedforward 加上，单位与 motor_t::output 相同） */
+ *   速度环：速度给定 + 速度前馈 -> 速度环结果。调用者再加上 motor_output_feedforward，写入 output */
 float motor_angle_loop(motor_t *motor, float angle_target);
 float motor_speed_loop(motor_t *motor, float speed_reference);
 float motor_speed_feedforward(const motor_t *motor);
