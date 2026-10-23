@@ -19,6 +19,11 @@ Release/
 *.lst
 *.a
 
+# clangd 本地编译数据库、配置和索引
+/compile_commands.json
+/.clangd
+/.cache/clangd/
+
 # STM32CubeMX 本地缓存（.ioc 需要提交）
 .mxproject
 
@@ -51,6 +56,13 @@ EWARM/settings/
 .idea/
 *.swp
 *~
+
+# 本地 AI 编码助手状态和配置
+/.agents/
+/.claude/
+/.codex/
+/.continue/
+/.cursor/
 
 # 系统
 .DS_Store
