@@ -8,4 +8,5 @@ subdir-$(CONFIG_COMPONENT_AHRS) += ahrs
 subdir-$(CONFIG_COMPONENT_FILTER) += filter
 subdir-$(CONFIG_COMPONENT_CHASSIS) += chassis
 subdir-$(CONFIG_COMPONENT_CRC) += crc
+subdir-$(CONFIG_COMPONENT_POWER) += power
 endif
