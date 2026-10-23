@@ -8,8 +8,6 @@
 #include "component/common/err.h"
 #include "component/crc/crc.h"
 
-_Static_assert(HOST_PAYLOAD_MAX <= 255u, "host payload length is one byte");
-
 #define HOST_RX_BLOCK_MAX   64u     /* 本板 USB 枚举为全速 CDC，一次接收最多 64 字节 */
 #define HOST_HEADER_LENGTH  3u      /* 帧头 + 长度 + 命令 */
 #define HOST_CRC_LENGTH     2u

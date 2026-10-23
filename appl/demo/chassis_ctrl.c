@@ -9,6 +9,9 @@
 #if defined(CONFIG_COMPONENT_POWER)
 #include "component/power/power.h"
 #endif
+#include "cdd/imu/ins/ins.h"
+#include "cdd/interboard/interboard.h"
+#include "interboard_config.h"
 #include "chassis_config.h"
 #include "supercap_config.h"
 #include "power_config.h"
@@ -135,6 +138,19 @@ static void chassis_ctrl_run(void *argument)
             (void)motor_set_target(&chassis_wheel[wheel_index]->base, wheel_rad_s[wheel_index] * M3508_GEAR_RATIO);
         }
     }
+#if defined(CONFIG_CDD_INTERBOARD_MASTER)
+    {
+        ins_attitude_t attitude;
+        interboard_motion_req_t control;
+
+        ins_get_attitude(&attitude);
+        control.forward_m_s = speed.forward_m_s;
+        control.right_m_s = speed.right_m_s;
+        control.spin_rad_s = speed.spin_rad_s;
+        control.yaw_rad = attitude.valid ? attitude.yaw_rad : 0.0f;
+        (void)interboard_fill(INTERBOARD_MOTION_REQ, &control);
+    }
+#endif
     (void)motor_compute_bus(CAN_BUS1);
 #if defined(CONFIG_COMPONENT_POWER)
     chassis_power_apply();

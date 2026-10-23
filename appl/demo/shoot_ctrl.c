@@ -5,6 +5,8 @@
 #include "component/common/err.h"
 #include "cdd/remote/dt7/dt7.h"
 #include "cdd/motor/motor_init.h"
+#include "cdd/interboard/interboard.h"
+#include "interboard_config.h"
 
 #define SHOOT_SWITCH_ON            1u
 #define SHOOT_TRIGGER_RAD_S        40.0f
@@ -33,6 +35,15 @@ static void shoot_ctrl_run(void *argument)
     dji_motor_set_cmd(&shoot_fric_0, friction_cmd);
     dji_motor_set_cmd(&shoot_fric_1, friction_cmd);
     dji_motor_set_cmd(&shoot_fric_2, (int16_t)(-friction_cmd));
+#if defined(CONFIG_CDD_INTERBOARD_MASTER)
+    {
+        interboard_shoot_req_t shoot;
+
+        shoot.trigger_rad_s = trigger_on ? SHOOT_TRIGGER_RAD_S : 0.0f;
+        shoot.friction_cmd = friction_cmd;
+        (void)interboard_fill(INTERBOARD_SHOOT_REQ, &shoot);
+    }
+#endif
     (void)motor_compute_bus(CAN_BUS0);
     (void)motor_send_bus(CAN_BUS0);
 }

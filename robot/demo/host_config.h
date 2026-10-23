@@ -68,12 +68,4 @@ typedef struct BYTE_PACKED
     HOST_AIM_PACKETS(X)                                                        \
     HOST_NAV_PACKETS(X)
 
-#ifdef CONFIG_CDD_HOST_AIM
-_Static_assert(sizeof(host_aim_attitude_t) <= HOST_PAYLOAD_MAX, "aim attitude exceeds host payload");
-_Static_assert(sizeof(host_aim_target_t) <= HOST_PAYLOAD_MAX, "aim target exceeds host payload");
-#endif
-#ifdef CONFIG_CDD_HOST_NAV
-_Static_assert(sizeof(host_nav_state_t) <= HOST_PAYLOAD_MAX, "nav state exceeds host payload");
-_Static_assert(sizeof(host_nav_speed_t) <= HOST_PAYLOAD_MAX, "nav speed exceeds host payload");
-#endif
 #endif

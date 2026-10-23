@@ -105,6 +105,18 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
         {
             size = config->rx_size;
         }
+        /* 传完中断已经把末尾交过，并把位置归零。紧接着的空闲中断会再报一次
+         * size == 缓冲长度。这时缓冲里没有新字节，再推一次就是把上一圈的帧重放一遍。 */
+        if (size == config->rx_size && state->last_position == 0u)
+        {
+            return;
+        }
+        if (size == config->rx_size)
+        {
+            rx_push(id, config->rx_buffer + state->last_position, (uint16_t)(config->rx_size - state->last_position));
+            state->last_position = 0u;
+            return;
+        }
         if (size >= state->last_position)
         {
             rx_push(id, config->rx_buffer + state->last_position, (uint16_t)(size - state->last_position));
@@ -114,7 +126,7 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
             rx_push(id, config->rx_buffer + state->last_position, (uint16_t)(config->rx_size - state->last_position));
             rx_push(id, config->rx_buffer, size);
         }
-        state->last_position = (size == config->rx_size) ? 0u : size;
+        state->last_position = size;
     }
     else                                         /* Normal / 中断：每次都是从缓冲区头开始的一段，处理完重启 */
     {

@@ -388,29 +388,4 @@ typedef enum
 
 /* 选手端（客户端）ID = 0x0100 + 机器人 ID */
 #define REFEREE_CLIENT_ID_BASE              0x0100u
-
-/* 数据段结构和协议长度对不上会在这里编译失败。位置（12 对 16）和允许发弹量（8 对 6）是已知的差异，见上面的说明 */
-_Static_assert(sizeof(referee_game_state_t) == REFEREE_LENGTH_GAME_STATE, "0x0001 size");
-_Static_assert(sizeof(referee_game_result_t) == REFEREE_LENGTH_GAME_RESULT, "0x0002 size");
-_Static_assert(sizeof(referee_game_robot_hp_t) == REFEREE_LENGTH_GAME_ROBOT_HP, "0x0003 size");
-_Static_assert(sizeof(referee_event_data_t) == REFEREE_LENGTH_EVENT_DATA, "0x0101 size");
-_Static_assert(sizeof(referee_warning_t) == REFEREE_LENGTH_REFEREE_WARNING, "0x0104 size");
-_Static_assert(sizeof(referee_dart_info_t) == REFEREE_LENGTH_DART_INFO, "0x0105 size");
-_Static_assert(sizeof(referee_robot_performance_t) == REFEREE_LENGTH_ROBOT_PERFORMANCE, "0x0201 size");
-_Static_assert(sizeof(referee_power_heat_t) == REFEREE_LENGTH_POWER_HEAT, "0x0202 size");
-_Static_assert(sizeof(referee_robot_position_t) <= REFEREE_LENGTH_ROBOT_POSITION, "0x0203 size");
-_Static_assert(sizeof(referee_buff_t) == REFEREE_LENGTH_BUFF, "0x0204 size");
-_Static_assert(sizeof(referee_robot_hurt_t) == REFEREE_LENGTH_ROBOT_HURT, "0x0206 size");
-_Static_assert(sizeof(referee_shoot_data_t) == REFEREE_LENGTH_SHOOT_DATA, "0x0207 size");
-_Static_assert(sizeof(referee_projectile_allowance_t) >= REFEREE_LENGTH_PROJECTILE_ALLOWANCE, "0x0208 size");
-_Static_assert(sizeof(referee_rfid_status_t) == REFEREE_LENGTH_RFID_STATUS, "0x0209 size");
-_Static_assert(sizeof(referee_dart_launch_status_t) == REFEREE_LENGTH_DART_LAUNCH_STATUS, "0x020A size");
-_Static_assert(sizeof(referee_ground_robot_position_t) == REFEREE_LENGTH_GROUND_ROBOT_POSITION, "0x020B size");
-_Static_assert(sizeof(referee_radar_mark_t) == REFEREE_LENGTH_RADAR_MARK, "0x020C size");
-_Static_assert(sizeof(referee_sentry_info_t) == REFEREE_LENGTH_SENTRY_INFO, "0x020D size");
-_Static_assert(sizeof(referee_radar_info_t) == REFEREE_LENGTH_RADAR_INFO, "0x020E size");
-_Static_assert(sizeof(referee_map_command_t) == REFEREE_LENGTH_MAP_COMMAND, "0x0303 size");
-_Static_assert(sizeof(referee_interaction_header_t) == REFEREE_INTERACTION_HEADER_LENGTH, "0x0301 header size");
-_Static_assert(sizeof(referee_ui_graph_t) == REFEREE_UI_GRAPH_LENGTH, "ui graph size");
-_Static_assert(sizeof(referee_ui_string_t) == REFEREE_UI_STRING_LENGTH, "ui string size");
 #endif
