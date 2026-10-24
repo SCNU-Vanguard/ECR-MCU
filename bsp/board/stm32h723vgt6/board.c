@@ -39,9 +39,9 @@ const bsp_uart_cfg_t board_uart_cfg[UART_NUM] =
 FDCAN_HandleTypeDef *const board_can[CAN_NUM] =
 {
     /* 逻辑总线        CubeIDE 句柄 */
-    [CAN_BUS0] = &hfdcan1,
-    [CAN_BUS1] = &hfdcan2,
-    [CAN_BUS2] = &hfdcan3,
+    [CAN_BUS1] = &hfdcan1,
+    [CAN_BUS2] = &hfdcan2,
+    [CAN_BUS3] = &hfdcan3,
 };
 #endif
 

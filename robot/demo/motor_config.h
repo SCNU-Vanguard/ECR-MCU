@@ -1,16 +1,11 @@
 #ifndef MOTOR_CONFIG_H__
 #define MOTOR_CONFIG_H__
-/* demo 的电机表。只放数据；对象声明在 cdd/motor/motor_init.h，注册在 cdd/motor/motor_init.c。
- * 底盘尺寸在 chassis_config.h。
- * CAN_BUS0 = FDCAN1 发射，CAN_BUS1 = FDCAN2 底盘，CAN_BUS2 = FDCAN3 云台。
- * 底盘四个 m3508，ID 1–4 对应数学象限 1–4（右前、左前、左后、右后），速度环。
- * 云台 yaw 是 j4310（0x05 / 0x15），pitch 是 gm6020 ID 1，都是角度环。
- * 发射：m2006 ID 1 速度环；三个摩擦轮 m3508 ID 2/3/4 不建控制行，目标由 dji_motor_set_cmd 直接发给电调。
- * 不用软件控制的电机，电机表最后一列填 NULL。
- * 打开前确认总线上真有电机：经典 CAN 开了自动重传，发给无应答总线的帧会被不断重发。
- * 速度环的结果在 output：dji_motor 是电流/电压原始值，dm_motor 是 N·m，lk_motor 是 iq 原始值。
- * 注册时反馈用电机自己的，前馈为 0；云台在任务里改绑到 INS。
- * dm 的 p_max / v_max / t_max 必须和上位机一致。j4310：3.14 / 30 / 10。 */
+/* 单板电机。型号、PID 和双板相同，只是三条总线合在这一块板上。
+ * CAN1：四个全向轮 m3508，ID 1–4 对应右前、左前、左后、右后，速度环。
+ * CAN2：pitch gm6020 ID 1；yaw j4310，控制 ID 1，反馈 Master ID 0x11。超电也在这条总线。
+ * CAN3：三个摩擦轮 m3508 ID 1、2、3，不建控制行，任务里直接给原始值，全正向。
+ *       拨弹 m2006 接着排，ID 4，和摩擦轮同在 0x200 控制帧里。速度环，只给 0 或恒定目标。
+ * 瓴控暂不挂。驱动和注册框架留着，robot.config 里关掉，表不出现。 */
 /* ================= dji_motor（m3508 / m2006 / gm6020） ================= */
 
 #define ROBOT_DJI_MOTOR_CONFIG_TABLE(X) \
@@ -18,11 +13,11 @@
     X(chassis_m3508_1, CAN_BUS1, MOTOR_TYPE_M3508 , 2, false, 0, 50, GM6020_MOTOR_UNFIT  , &chassis_m3508_1_control) \
     X(chassis_m3508_2, CAN_BUS1, MOTOR_TYPE_M3508 , 3, false, 0, 50, GM6020_MOTOR_UNFIT  , &chassis_m3508_2_control) \
     X(chassis_m3508_3, CAN_BUS1, MOTOR_TYPE_M3508 , 4, false, 0, 50, GM6020_MOTOR_UNFIT  , &chassis_m3508_3_control) \
-    X(gimbal_gm6020  , CAN_BUS2, MOTOR_TYPE_GM6020, 1, false, 0, 50, GM6020_MOTOR_VOLTAGE, &gimbal_gm6020_control  ) \
-    X(shoot_m2006    , CAN_BUS0, MOTOR_TYPE_M2006 , 1, false, 0, 50, GM6020_MOTOR_UNFIT  , &shoot_m2006_control    ) \
-    X(shoot_fric_0   , CAN_BUS0, MOTOR_TYPE_M3508 , 2, false, 0, 50, GM6020_MOTOR_UNFIT  , NULL                    ) \
-    X(shoot_fric_1   , CAN_BUS0, MOTOR_TYPE_M3508 , 3, false, 0, 50, GM6020_MOTOR_UNFIT  , NULL                    ) \
-    X(shoot_fric_2   , CAN_BUS0, MOTOR_TYPE_M3508 , 4, false, 0, 50, GM6020_MOTOR_UNFIT  , NULL                    )
+    X(pitch_gm6020   , CAN_BUS2, MOTOR_TYPE_GM6020, 1, false, 0, 50, GM6020_MOTOR_VOLTAGE, &pitch_gm6020_control   ) \
+    X(shoot_fric_0   , CAN_BUS3, MOTOR_TYPE_M3508 , 1, false, 0, 50, GM6020_MOTOR_UNFIT  , NULL                    ) \
+    X(shoot_fric_1   , CAN_BUS3, MOTOR_TYPE_M3508 , 2, false, 0, 50, GM6020_MOTOR_UNFIT  , NULL                    ) \
+    X(shoot_fric_2   , CAN_BUS3, MOTOR_TYPE_M3508 , 3, false, 0, 50, GM6020_MOTOR_UNFIT  , NULL                    ) \
+    X(shoot_m2006    , CAN_BUS3, MOTOR_TYPE_M2006 , 4, false, 0, 50, GM6020_MOTOR_UNFIT  , &shoot_m2006_control    )
 /* 名字           , 总线    , 型号             , ID, 反向 , 零点, 超时, gm6020控制量      , 控制参数 */
 
 #define ROBOT_DJI_MOTOR_CONTROL_TABLE(X) \
@@ -31,30 +26,16 @@
     X(chassis_m3508_2, MOTOR_CONTROL_SPEED, 0.0f , 0.0f, 0.0f, 0.0f, 0.0f , 0.0f , 0.0f, 0.0f, 100.0f, 0.0f, 0.0f, 0.0f, 10000.0f, 10000.0f, 0.0f, 0.0f) \
     X(chassis_m3508_3, MOTOR_CONTROL_SPEED, 0.0f , 0.0f, 0.0f, 0.0f, 0.0f , 0.0f , 0.0f, 0.0f, 100.0f, 0.0f, 0.0f, 0.0f, 10000.0f, 10000.0f, 0.0f, 0.0f) \
     X(shoot_m2006    , MOTOR_CONTROL_SPEED, 0.0f , 0.0f, 0.0f, 0.0f, 0.0f , 0.0f , 0.0f, 0.0f, 100.0f, 0.0f, 0.0f, 0.0f, 10000.0f, 10000.0f, 0.0f, 0.0f) \
-    X(gimbal_gm6020  , MOTOR_CONTROL_ANGLE, 10.0f, 0.0f, 0.0f, 0.0f, 20.0f, 20.0f, 0.0f, 0.0f, 500.0f, 0.0f, 0.0f, 0.0f, 15000.0f, 15000.0f, 0.0f, 0.0f)
+    X(pitch_gm6020   , MOTOR_CONTROL_ANGLE, 10.0f, 0.0f, 0.0f, 0.0f, 20.0f, 20.0f, 0.0f, 0.0f, 500.0f, 0.0f, 0.0f, 0.0f, 15000.0f, 15000.0f, 0.0f, 0.0f)
 /* 名字           , 模式               , 角kp , 角ki, 角kd, 角kf, 角输出, 角积分, 角前馈, 角死区, 速kp  , 速ki, 速kd, 速kf, 速输出  , 速积分  , 速前馈, 速死区 */
 
 /* ================= dm_motor（j4310） ================= */
 
 #define ROBOT_DM_MOTOR_CONFIG_TABLE(X) \
-    X(gimbal_j4310, CAN_BUS2, MOTOR_TYPE_J4310, 0x05, 0x15, DM_MOTOR_MODE_TORQUE, false, 3.14f, 30.0f, 10.0f, 100, 0.0f, 0.0f, 0.0f, 0.0f, &gimbal_j4310_control)
-/* 名字        , 总线    , 型号           , tx_id, master, 控制模式           , 反向 , p_max, v_max, t_max, 超时, Kp  , Kd  , 速度上限, 电流上限, 控制参数 */
+    X(yaw_j4310, CAN_BUS2, MOTOR_TYPE_J4310, 1, 0x11, DM_MOTOR_MODE_TORQUE, false, 3.14f, 30.0f, 10.0f, 100, 0.0f, 0.0f, 0.0f, 0.0f, &yaw_j4310_control)
+/* 名字     , 总线    , 型号           , tx_id, master, 控制模式           , 反向 , p_max, v_max, t_max, 超时, Kp , Kd , 速度上限, 电流上限, 控制参数 */
 
 #define ROBOT_DM_MOTOR_CONTROL_TABLE(X) \
-    X(gimbal_j4310, MOTOR_CONTROL_ANGLE, 15.0f, 0.0f, 0.0f, 0.0f, 5.0f, 5.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 5.0f, 5.0f, 0.0f, 0.0f)
-/* 名字        , 模式               , 角kp , 角ki, 角kd, 角kf, 角输出, 角积分, 角前馈, 角死区, 速kp, 速ki, 速kd, 速kf, 速输出, 速积分, 速前馈, 速死区 */
-
-/* ================= lk_motor（MF9025） =================
- * 标识符 0x140+ID。这台 ID 1，线上 0x141，挂 CAN_BUS1，和大疆反馈帧不重叠。
- * 命令 0xA1 的 iq 由 output 换算，±2048 对应 ±16.5 A。
- * 角度环、速度环的数来自英雄底盘云台那台 MF9025。 */
-
-#define ROBOT_LK_MOTOR_CONFIG_TABLE(X) \
-    X(mf9025, CAN_BUS1, 1, false, 50, &mf9025_control)
-/* 名字   , 总线    , ID, 反向 , 超时, 控制参数 */
-
-#define ROBOT_LK_MOTOR_CONTROL_TABLE(X) \
-    X(mf9025, MOTOR_CONTROL_ANGLE, 10.0f, 0.0f, 0.0f, 0.0f, 20.0f, 10.0f, 0.0f, 0.0f, 100.0f, 0.0f, 0.0f, 10.0f, 2048.0f, 1000.0f, 0.0f, 0.0f)
-/* 名字   , 模式               , 角kp , 角ki, 角kd, 角kf, 角输出, 角积分, 角前馈, 角死区, 速kp  , 速ki, 速kd, 速kf , 速输出  , 速积分 , 速前馈, 速死区 */
-
+    X(yaw_j4310, MOTOR_CONTROL_ANGLE, 15.0f, 0.0f, 0.0f, 0.0f, 5.0f, 5.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 5.0f, 5.0f, 0.0f, 0.0f)
+/* 名字     , 模式               , 角kp , 角ki, 角kd, 角kf, 角输出, 角积分, 角前馈, 角死区, 速kp, 速ki, 速kd, 速kf, 速输出, 速积分, 速前馈, 速死区 */
 #endif

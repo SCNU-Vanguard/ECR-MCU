@@ -1,6 +1,5 @@
 #include <string.h>
 #include "cdd/interboard/interboard.h"
-#include "interboard_config.h"
 #include "bsp/uart/bsp_uart.h"
 #include "osal/event.h"
 #include "osal/osal.h"
@@ -28,8 +27,11 @@
 static interboard_link_t link;
 static interboard_request_t request_image;
 static interboard_reply_t reply_image;
-static bool request_seen;
+#if defined(CONFIG_CDD_INTERBOARD_MASTER)
 static bool reply_seen;
+#else
+static bool request_seen;
+#endif
 static uint8_t stream[INTERBOARD_STREAM_SIZE];
 static uint32_t stream_count;
 static uint32_t last_ok_ms;
@@ -43,71 +45,99 @@ static uint8_t next_sequence;
 static uint8_t timeout_streak;
 #endif
 
-static bool block_fits(interboard_block_t block, uint16_t image_size)
-{
-    return block.size != 0u && (uint32_t)block.offset + block.size <= image_size;
-}
-
-int32_t interboard_fill(interboard_block_t block, const void *data)
-{
 #if defined(CONFIG_CDD_INTERBOARD_MASTER)
-    uint8_t *image = (uint8_t *)&request_image;
-    uint16_t image_size = (uint16_t)sizeof request_image;
-    uint8_t kind = 0u;
-#else
-    uint8_t *image = (uint8_t *)&reply_image;
-    uint16_t image_size = (uint16_t)sizeof reply_image;
-    uint8_t kind = 1u;
-#endif
-
-    if (data == NULL || block.kind != kind || !block_fits(block, image_size))
+void interboard_load_request(interboard_request_t *request)
+{
+    if (request == NULL)
     {
-        return ERR_INVAL;
+        return;
     }
 
     uint32_t irq_key = os_irq_save();
 
-    memcpy(image + block.offset, data, block.size);
+    *request = request_image;
     os_irq_restore(irq_key);
-    return ERR_OK;
 }
 
-bool interboard_take(interboard_block_t block, void *data)
+void interboard_store_request(const interboard_request_t *request)
 {
-#if defined(CONFIG_CDD_INTERBOARD_MASTER)
-    uint8_t *image = (uint8_t *)&reply_image;
-    uint16_t image_size = (uint16_t)sizeof reply_image;
-    uint8_t kind = 1u;
-    bool seen;
-#else
-    uint8_t *image = (uint8_t *)&request_image;
-    uint16_t image_size = (uint16_t)sizeof request_image;
-    uint8_t kind = 0u;
-    bool seen;
-#endif
+    if (request == NULL)
+    {
+        return;
+    }
 
-    if (data == NULL || block.kind != kind || !block_fits(block, image_size))
+    uint32_t irq_key = os_irq_save();
+
+    request_image = *request;
+    os_irq_restore(irq_key);
+}
+
+bool interboard_load_reply(interboard_reply_t *reply)
+{
+    bool seen;
+
+    if (reply == NULL)
     {
         return false;
     }
 
     uint32_t irq_key = os_irq_save();
 
-    if (kind == 0u)
-    {
-        seen = request_seen;
-    }
-    else
-    {
-        seen = reply_seen;
-    }
+    seen = reply_seen;
     if (seen)
     {
-        memcpy(data, image + block.offset, block.size);
+        *reply = reply_image;
     }
     os_irq_restore(irq_key);
     return seen;
 }
+#elif defined(CONFIG_CDD_INTERBOARD_SLAVE)
+bool interboard_load_request(interboard_request_t *request)
+{
+    bool seen;
+
+    if (request == NULL)
+    {
+        return false;
+    }
+
+    uint32_t irq_key = os_irq_save();
+
+    seen = request_seen;
+    if (seen)
+    {
+        *request = request_image;
+    }
+    os_irq_restore(irq_key);
+    return seen;
+}
+
+void interboard_load_reply(interboard_reply_t *reply)
+{
+    if (reply == NULL)
+    {
+        return;
+    }
+
+    uint32_t irq_key = os_irq_save();
+
+    *reply = reply_image;
+    os_irq_restore(irq_key);
+}
+
+void interboard_store_reply(const interboard_reply_t *reply)
+{
+    if (reply == NULL)
+    {
+        return;
+    }
+
+    uint32_t irq_key = os_irq_save();
+
+    reply_image = *reply;
+    os_irq_restore(irq_key);
+}
+#endif
 
 void interboard_get_link(interboard_link_t *out)
 {

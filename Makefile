@@ -1,7 +1,9 @@
 # ecr-mcu 顶层入口。用法：
-#   make p=h7 r=demo                       # p = 平台，r = 机器人（兵种）。默认 -O3，按 CPU 核数并行
-#   make p=h7 r=demo OPT=-Og V=1           # 临时改优化级别 / 显示完整命令
-#   make p=h7 r=demo clean
+#   make p=h7 r=demo_gimbal                # p = 平台，r = 机器人（兵种）。默认 -O3，按 CPU 核数并行
+#   make p=h7 r=demo_chassis               # 底盘板
+#   make p=h7 r=demo                       # 单板，底盘云台发射在同一块板上
+#   make p=h7 r=demo_gimbal OPT=-Og V=1    # 临时改优化级别 / 显示完整命令
+#   make p=h7 r=demo_gimbal clean
 #   make                                        # 等价于 make p=h7 r=demo
 # 配置文件：robot/<r>/robot.config（CONFIG_XXX = y | n），与平台无关
 # 产物：output/<r>_<p>/<r>_<p>.{elf,bin,hex,map}

@@ -5,7 +5,7 @@
 #include "component/common/err.h"
 #include "cdd/host/host.h"
 #include "cdd/imu/ins/ins.h"
-#ifdef CONFIG_CDD_HOST_NAV
+#if defined(CONFIG_CDD_HOST_NAV) && defined(CONFIG_CDD_REFEREE)
 #include "cdd/referee/referee.h"
 #endif
 #include "host_config.h"
@@ -58,7 +58,7 @@ static void host_ctrl_run(void *argument)
         host_send(HOST_CMD_AIM_ATTITUDE, &current, sizeof current);
     }
 #endif
-#ifdef CONFIG_CDD_HOST_NAV
+#if defined(CONFIG_CDD_HOST_NAV) && defined(CONFIG_CDD_REFEREE)
     {
         referee_info_t referee;
         host_nav_state_t nav;

@@ -13,12 +13,12 @@ typedef enum
     UART_NUM
 } uart_id_e;
 
-/* 具体挂什么电机由兵种配置决定 */
+/* 具体挂什么电机由兵种配置决定。名字和 FDCAN 序号一致，枚举值仍从 0 计，用来当下标。 */
 typedef enum
 {
-    CAN_BUS0,
     CAN_BUS1,
     CAN_BUS2,
+    CAN_BUS3,
     CAN_NUM
 } can_id_e;
 

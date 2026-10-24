@@ -2,7 +2,11 @@ ifeq ($(CONFIG_ROBOT),y)
     # -I robot/<r>，cdd 里的注册代码包含当前兵种的 *_config.h。
     MODULE_INC += $(d)$(r)
     ifeq ($(r),demo)
-        # demo 的表在头文件里：motor_config.h、chassis_config.h、host_config.h、interboard_config.h。
+        # 表在本目录的头文件里。单板不用板间。
+    else ifeq ($(r),demo_gimbal)
+        # 表在本目录的头文件里。板间帧和底盘板各写一份。
+    else ifeq ($(r),demo_chassis)
+        # 表在本目录的头文件里。板间帧和云台板各写一份。
     else
         $(error unknown robot r=$(r); add a branch in robot/module.mk)
     endif

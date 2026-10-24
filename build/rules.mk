@@ -46,8 +46,8 @@ clean:
 	rm -rf $(OUT)
 
 # ---- 烧录 / 调试（DAPLink + pyOCD）----
-# make p=h7 r=demo flash    烧录并复位
-# make p=h7 r=demo gdb      启动 pyOCD gdb server（端口 3333），再用 arm-none-eabi-gdb 连接
+# make p=h7 r=demo_gimbal flash    烧录并复位
+# make p=h7 r=demo_gimbal gdb      启动 pyOCD gdb server（端口 3333），再用 arm-none-eabi-gdb 连接
 PYOCD  ?= py -m pyocd
 PYOCD_TARGET_stm32h723vgt6 := stm32h723vgtx
 PYOCD_TARGET_stm32f407igh6 := stm32f407ig

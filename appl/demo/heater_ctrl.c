@@ -1,7 +1,4 @@
-/* demo：IMU 恒温加热任务。
- * 10 Hz 周期任务：取 ins_task 发布的 IMU 温度（BMI088 驱动每 100 帧读一次，约 10 Hz），交给 heater 做预热 + PID 恒温。
- * 保护：温度数据超过 HEATER_STALE_LIMIT_CYCLES 个周期没有更新（INS 卡死、IMU 掉线）就关加热，防止在没有反馈时一直加热。
- * shell：heater 看阶段、目标/当前温度和占空比。 */
+/* 单板：IMU 恒温。温度超过 0.5 s 不更新就关加热。 */
 #include "osal/period.h"
 #include "component/common/initcall.h"
 #include "component/common/err.h"
@@ -10,7 +7,7 @@
 #include "cdd/imu/heater/heater.h"
 #include "cdd/imu/ins/ins.h"
 
-#define HEATER_STALE_LIMIT_CYCLES   5u              /* 0.5 s */
+#define HEATER_STALE_LIMIT_CYCLES   5u
 
 static uint32_t last_update_count;
 static uint32_t stale_cycles;
@@ -57,7 +54,6 @@ static void heater_ctrl_run(void *argument)
         heater_off();
     }
 }
-/* 任务名 heater_ctrl_task，10 Hz，低优先级，小栈 */
 PERIOD_TASK_DEFINE(heater_ctrl_task, OS_FREQ_10HZ, OS_PRIORITY_LOW, OS_STACK_SMALL, heater_ctrl_run, NULL);
 
 static bool heater_input_stale(void)
@@ -69,7 +65,6 @@ static bool heater_input_stale(void)
 #include <stdio.h>
 #include "component/shell/shell_cmd.h"
 
-/* 当前 C 库没开浮点 printf，温度按毫度整数拆开打印 */
 static void print_milli(const char *label, float value, const char *unit)
 {
     long milli = (long)(value * 1000.0f + (value >= 0.0f ? 0.5f : -0.5f));

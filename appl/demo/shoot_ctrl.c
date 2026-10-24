@@ -1,50 +1,50 @@
-/* 发射：CAN1。左拨杆（switch_left，上=1）开关 m2006，速度恒定。
- * 右拨杆（switch_right，上=1）开关三个摩擦轮。旧步兵摩擦轮把目标转速原值直接发给电调，不经过速度环。 */
+/* 发射：CAN3。三个摩擦轮直接给原始输出，全正向，开时固定 6000。
+ * 拨弹 m2006 速度环，只分转和不转，目标 40 rad/s。左拨杆下或离线时输出关掉。 */
 #include "osal/period.h"
-#include "component/common/initcall.h"
-#include "component/common/err.h"
 #include "cdd/remote/dt7/dt7.h"
 #include "cdd/motor/motor_init.h"
-#include "cdd/interboard/interboard.h"
-#include "interboard_config.h"
 
-#define SHOOT_SWITCH_ON            1u
-#define SHOOT_TRIGGER_RAD_S        40.0f
-#define SHOOT_FRICTION_CMD         8000
+#define DT7_SWITCH_UP         1u
+#define DT7_SWITCH_MID        3u
+#define SHOOT_FRICTION_CMD    6000
+#define SHOOT_TRIGGER_RAD_S   40.0f
 
-static int32_t shoot_ctrl_init(void)
-{
-    motor_set_active(&shoot_m2006.base, true);
-    return ERR_OK;
-}
-INIT_APP_STAGE2(shoot_ctrl_init);
+static bool trigger_active;
 
 static void shoot_ctrl_run(void *argument)
 {
     dt7_data_t remote;
-    bool trigger_on;
+    bool allowed;
     bool friction_on;
+    bool spinning;
     int16_t friction_cmd;
 
     (void)argument;
     dt7_get(&remote);
-    trigger_on = remote.switch_left == SHOOT_SWITCH_ON;
-    friction_on = remote.switch_right == SHOOT_SWITCH_ON;
-    (void)motor_set_target(&shoot_m2006.base, trigger_on ? SHOOT_TRIGGER_RAD_S : 0.0f);
+    allowed = remote.online &&
+              (remote.switch_left == DT7_SWITCH_UP || remote.switch_left == DT7_SWITCH_MID);
+    friction_on = allowed &&
+                  (remote.switch_right == DT7_SWITCH_UP || remote.switch_right == DT7_SWITCH_MID);
+    spinning = allowed && remote.switch_right == DT7_SWITCH_UP;
     friction_cmd = friction_on ? SHOOT_FRICTION_CMD : 0;
     dji_motor_set_cmd(&shoot_fric_0, friction_cmd);
     dji_motor_set_cmd(&shoot_fric_1, friction_cmd);
-    dji_motor_set_cmd(&shoot_fric_2, (int16_t)(-friction_cmd));
-#if defined(CONFIG_CDD_INTERBOARD_MASTER)
+    dji_motor_set_cmd(&shoot_fric_2, friction_cmd);
+    if (allowed)
     {
-        interboard_shoot_req_t shoot;
-
-        shoot.trigger_rad_s = trigger_on ? SHOOT_TRIGGER_RAD_S : 0.0f;
-        shoot.friction_cmd = friction_cmd;
-        (void)interboard_fill(INTERBOARD_SHOOT_REQ, &shoot);
+        if (!trigger_active)
+        {
+            motor_set_active(&shoot_m2006.base, true);
+            trigger_active = true;
+        }
+        (void)motor_set_target(&shoot_m2006.base, spinning ? SHOOT_TRIGGER_RAD_S : 0.0f);
     }
-#endif
-    (void)motor_compute_bus(CAN_BUS0);
-    (void)motor_send_bus(CAN_BUS0);
+    else if (trigger_active)
+    {
+        motor_set_active(&shoot_m2006.base, false);
+        trigger_active = false;
+    }
+    (void)motor_compute_bus(CAN_BUS3);
+    (void)motor_send_bus(CAN_BUS3);
 }
 PERIOD_TASK_DEFINE(shoot_ctrl_task, OS_FREQ_1000HZ, OS_PRIORITY_MEDIUM, OS_STACK_MEDIUM, shoot_ctrl_run, NULL);

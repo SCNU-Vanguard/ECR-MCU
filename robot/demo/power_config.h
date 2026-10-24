@@ -1,6 +1,6 @@
 #ifndef POWER_CONFIG_H__
 #define POWER_CONFIG_H__
-/* 参与功率控制的电机。只列在这里的电机会被改 output，没列出的原样发送。
+/* 只限制四个全向轮。发射和云台不进这张表。
  * 系数来自 2026 步兵 M3508 模型。原式用转子 rpm，这里改成 rad/s：
  *   k_output_speed = 1.996889994e-6 * 9.5493
  *   k_speed2       = 2.0326e-7 * 9.5493^2
