@@ -12,6 +12,10 @@
       "gdbPath": "arm-none-eabi-gdb",
       "overrideGDBServerStartedRegex": "GDB server (started|listening) (at|on) port",
       "preLaunchTask": "build demo_h7",
+      "liveWatch": {
+        "enabled": true,
+        "samplesPerSecond": 4
+      },
       "runToEntryPoint": "main"
     },
     {
@@ -25,6 +29,10 @@
       "gdbPath": "arm-none-eabi-gdb",
       "overrideGDBServerStartedRegex": "GDB server (started|listening) (at|on) port",
       "preLaunchTask": "build demo_gimbal_h7",
+      "liveWatch": {
+        "enabled": true,
+        "samplesPerSecond": 4
+      },
       "runToEntryPoint": "main"
     },
     {
@@ -38,6 +46,10 @@
       "gdbPath": "arm-none-eabi-gdb",
       "overrideGDBServerStartedRegex": "GDB server (started|listening) (at|on) port",
       "preLaunchTask": "build demo_chassis_h7",
+      "liveWatch": {
+        "enabled": true,
+        "samplesPerSecond": 4
+      },
       "runToEntryPoint": "main"
     },
     {
@@ -51,6 +63,10 @@
       "gdbPath": "arm-none-eabi-gdb",
       "overrideGDBServerStartedRegex": "GDB server (started|listening) (at|on) port",
       "preLaunchTask": "build sec_infantry_h7",
+      "liveWatch": {
+        "enabled": true,
+        "samplesPerSecond": 4
+      },
       "runToEntryPoint": "main"
     },
     {
@@ -64,6 +80,10 @@
       "gdbPath": "arm-none-eabi-gdb",
       "overrideGDBServerStartedRegex": "GDB server (started|listening) (at|on) port",
       "preLaunchTask": "build heavy_gimbal_h7",
+      "liveWatch": {
+        "enabled": true,
+        "samplesPerSecond": 4
+      },
       "runToEntryPoint": "main"
     },
     {
@@ -77,6 +97,10 @@
       "gdbPath": "arm-none-eabi-gdb",
       "overrideGDBServerStartedRegex": "GDB server (started|listening) (at|on) port",
       "preLaunchTask": "build heavy_chassis_h7",
+      "liveWatch": {
+        "enabled": true,
+        "samplesPerSecond": 4
+      },
       "runToEntryPoint": "main"
     },
     {
@@ -90,6 +114,10 @@
       "gdbPath": "arm-none-eabi-gdb",
       "overrideGDBServerStartedRegex": "GDB server (started|listening) (at|on) port",
       "preLaunchTask": "build infantry_gimbal_h7",
+      "liveWatch": {
+        "enabled": true,
+        "samplesPerSecond": 4
+      },
       "runToEntryPoint": "main"
     },
     {
@@ -103,6 +131,10 @@
       "gdbPath": "arm-none-eabi-gdb",
       "overrideGDBServerStartedRegex": "GDB server (started|listening) (at|on) port",
       "preLaunchTask": "build infantry_chassis_h7",
+      "liveWatch": {
+        "enabled": true,
+        "samplesPerSecond": 4
+      },
       "runToEntryPoint": "main"
     },
     {
@@ -116,6 +148,10 @@
       "gdbPath": "arm-none-eabi-gdb",
       "overrideGDBServerStartedRegex": "GDB server (started|listening) (at|on) port",
       "preLaunchTask": "build sentry_gimbal_h7",
+      "liveWatch": {
+        "enabled": true,
+        "samplesPerSecond": 4
+      },
       "runToEntryPoint": "main"
     },
     {
@@ -129,6 +165,10 @@
       "gdbPath": "arm-none-eabi-gdb",
       "overrideGDBServerStartedRegex": "GDB server (started|listening) (at|on) port",
       "preLaunchTask": "build sentry_chassis_h7",
+      "liveWatch": {
+        "enabled": true,
+        "samplesPerSecond": 4
+      },
       "runToEntryPoint": "main"
     }
   ]
