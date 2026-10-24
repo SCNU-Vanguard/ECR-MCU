@@ -43,7 +43,7 @@ $(OUT)/%.hex: $(OUT)/%.elf
 	$(Q)$(OBJCOPY) -O ihex $< $@
 
 clean:
-	rm -rf $(OUT)
+	rm -rf output
 
 # ---- 烧录 / 调试（DAPLink + pyOCD）----
 # make p=h7 r=demo_gimbal flash    烧录并复位

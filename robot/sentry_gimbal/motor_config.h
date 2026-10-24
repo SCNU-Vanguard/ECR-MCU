@@ -1,0 +1,5 @@
+#ifndef MOTOR_CONFIG_H__
+#define MOTOR_CONFIG_H__
+#define ROBOT_DJI_MOTOR_CONFIG_TABLE(X)
+#define ROBOT_DJI_MOTOR_CONTROL_TABLE(X)
+#endif

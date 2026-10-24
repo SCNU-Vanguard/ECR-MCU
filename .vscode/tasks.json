@@ -9,13 +9,133 @@
       "type": "process",
       "command": "make",
       "args": ["p=h7", "r=demo"],
-      "group": "build"
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
     },
     {
       "label": "flash demo_h7",
       "type": "process",
       "command": "make",
       "args": ["p=h7", "r=demo", "flash"]
+    },
+    {
+      "label": "build demo_gimbal_h7",
+      "type": "process",
+      "command": "make",
+      "args": ["p=h7", "r=demo_gimbal"],
+      "group": "build"
+    },
+    {
+      "label": "flash demo_gimbal_h7",
+      "type": "process",
+      "command": "make",
+      "args": ["p=h7", "r=demo_gimbal", "flash"]
+    },
+    {
+      "label": "build demo_chassis_h7",
+      "type": "process",
+      "command": "make",
+      "args": ["p=h7", "r=demo_chassis"],
+      "group": "build"
+    },
+    {
+      "label": "flash demo_chassis_h7",
+      "type": "process",
+      "command": "make",
+      "args": ["p=h7", "r=demo_chassis", "flash"]
+    },
+    {
+      "label": "build sec_infantry_h7",
+      "type": "process",
+      "command": "make",
+      "args": ["p=h7", "r=sec_infantry"],
+      "group": "build"
+    },
+    {
+      "label": "flash sec_infantry_h7",
+      "type": "process",
+      "command": "make",
+      "args": ["p=h7", "r=sec_infantry", "flash"]
+    },
+    {
+      "label": "build heavy_gimbal_h7",
+      "type": "process",
+      "command": "make",
+      "args": ["p=h7", "r=heavy_gimbal"],
+      "group": "build"
+    },
+    {
+      "label": "flash heavy_gimbal_h7",
+      "type": "process",
+      "command": "make",
+      "args": ["p=h7", "r=heavy_gimbal", "flash"]
+    },
+    {
+      "label": "build heavy_chassis_h7",
+      "type": "process",
+      "command": "make",
+      "args": ["p=h7", "r=heavy_chassis"],
+      "group": "build"
+    },
+    {
+      "label": "flash heavy_chassis_h7",
+      "type": "process",
+      "command": "make",
+      "args": ["p=h7", "r=heavy_chassis", "flash"]
+    },
+    {
+      "label": "build infantry_gimbal_h7",
+      "type": "process",
+      "command": "make",
+      "args": ["p=h7", "r=infantry_gimbal"],
+      "group": "build"
+    },
+    {
+      "label": "flash infantry_gimbal_h7",
+      "type": "process",
+      "command": "make",
+      "args": ["p=h7", "r=infantry_gimbal", "flash"]
+    },
+    {
+      "label": "build infantry_chassis_h7",
+      "type": "process",
+      "command": "make",
+      "args": ["p=h7", "r=infantry_chassis"],
+      "group": "build"
+    },
+    {
+      "label": "flash infantry_chassis_h7",
+      "type": "process",
+      "command": "make",
+      "args": ["p=h7", "r=infantry_chassis", "flash"]
+    },
+    {
+      "label": "build sentry_gimbal_h7",
+      "type": "process",
+      "command": "make",
+      "args": ["p=h7", "r=sentry_gimbal"],
+      "group": "build"
+    },
+    {
+      "label": "flash sentry_gimbal_h7",
+      "type": "process",
+      "command": "make",
+      "args": ["p=h7", "r=sentry_gimbal", "flash"]
+    },
+    {
+      "label": "build sentry_chassis_h7",
+      "type": "process",
+      "command": "make",
+      "args": ["p=h7", "r=sentry_chassis"],
+      "group": "build"
+    },
+    {
+      "label": "flash sentry_chassis_h7",
+      "type": "process",
+      "command": "make",
+      "args": ["p=h7", "r=sentry_chassis", "flash"]
     }
   ]
 }
