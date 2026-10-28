@@ -42,6 +42,7 @@ int32_t buzzer_set_volume(uint32_t frequency_hz, uint16_t volume)
 int32_t buzzer_set(uint32_t frequency_hz, uint32_t duty_ppm)
 {
     if (duty_ppm > 1000000u) return ERR_INVAL;
+    /* 先关闭 PWM：频率或占空比为 0 时也必须实际停输出，再返回停止结果。 */
     int32_t ret = bsp_pwm_stop(PWM_BUZZER);
     if (ret != ERR_OK || frequency_hz == 0u || duty_ppm == 0u) return ret;
 

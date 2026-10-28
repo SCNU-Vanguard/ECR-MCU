@@ -11,7 +11,7 @@ int32_t buzzer_set(uint32_t frequency_hz, uint32_t duty_ppm);
 int32_t buzzer_set_volume(uint32_t frequency_hz, uint16_t volume);
 
 /* 启动一首曲目并立即输出首音；曲谱需在播放期间有效。
- * 单任务调用；播放中返回 ERR_BUSY，音量范围 0..1000。 */
+ * 播放相关接口须由单任务调用或由调用方互斥保护；播放中返回 ERR_BUSY，音量范围 0..1000。 */
 int32_t buzzer_play(const buzzer_song_t *song, uint16_t volume);
 /* 周期调用以切换音符，播完自动静音；输出失败时停止播放并返回错误。 */
 int32_t buzzer_tick(void);
