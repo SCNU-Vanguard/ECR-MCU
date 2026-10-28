@@ -1,6 +1,6 @@
 /* demo：惯导（姿态解算）任务。
  * 数据流：BMI088 DRDY 中断 -> SPI DMA 读取（全在中断里，见 cdd/imu/bmi088）-> 帧回调里 event_post_isr -> 本任务
- *   本任务：换算物理量（含标定）-> 用 DRDY 时间戳算真实 dt -> ahrs_update（算法由本文件的 INS_ALGORITHM 在编译期决定）-> 发布姿态。
+ *   本任务：换算物理量（含标定）-> 用 DRDY 时间戳算真实 dt -> ahrs_update（算法由当前兵种 ins_config.h 的 INS_ALGORITHM 决定）-> 发布姿态。
  * 超时：100 ms 没有新帧（DRDY 线卡死、DMA 异常），调用 bmi088_recover 重新拉起采集。
  * shell：ins_info 看姿态和统计，ins_imu 看最近一帧物理量。 */
 #include <string.h>
@@ -13,9 +13,7 @@
 #include "component/ahrs/ahrs.h"
 #include "cdd/imu/bmi088/bmi088.h"
 #include "cdd/imu/ins/ins.h"
-
-/* 姿态解算算法（ahrs_algorithm_e）：AHRS_ALGORITHM_VQF / MEKF / MADGWICK / MAHONY。换算法就改这里，重新编译烧录 */
-#define INS_ALGORITHM               AHRS_ALGORITHM_VQF
+#include "ins_config.h"
 
 /* 加速度计样本比陀螺仪样本旧过这么多就认为过期，这一拍加速度计不参与校正（只用陀螺积分）：两个加速度计周期 + 1 ms */
 #define INS_ACCEL_MAX_AGE_US        (2u * BMI088_ACCEL_SAMPLE_PERIOD_US + 1000u)
@@ -374,6 +372,7 @@ static int shell_ins_cali(int argc, char *argv[])
     {
         shell_out("WARNING: gyro moved during sampling (peak-to-peak > 0.1 rad/s), result is not reliable, run ins_cali again\r\n");
     }
+    shell_out("paste into ins_config.h:\r\n");
     shell_out("#define BMI088_CALIBRATION_TABLE(X)\r\n");
     for (int axis = 0; axis < 3; axis++)
     {

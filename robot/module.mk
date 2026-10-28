@@ -1,5 +1,6 @@
 ifeq ($(CONFIG_ROBOT),y)
     # -I robot/<r>，cdd 里的注册代码包含当前兵种的 *_config.h。
+    # 开了 IMU 的兵种要提供 ins_config.h（算法、标定、加热）。
     MODULE_INC += $(d)$(r)
     ifeq ($(r),demo)
         # 表在本目录的头文件里。单板不用板间。

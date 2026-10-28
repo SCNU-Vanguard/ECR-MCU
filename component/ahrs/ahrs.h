@@ -1,6 +1,6 @@
 #ifndef AHRS_H__
 #define AHRS_H__
-/* 姿态解算统一接口：上层只依赖这里。用哪个算法在 cdd/imu/ins/ins.c 的 INS_ALGORITHM。
+/* 姿态解算统一接口：上层只依赖这里。用哪个算法在当前兵种 ins_config.h 的 INS_ALGORITHM。
  * 每个算法由 CONFIG_COMPONENT_AHRS_<NAME> 决定是否编进固件：头文件、状态、调用都只在对应宏打开时存在。
  * 选了没编进来的算法时 ahrs_start 返回 ERR_NODEV。
  * 坐标约定：四元数 [w, x, y, z]，Hamilton，机体系 -> 导航系；静止时比力沿 +Z；欧拉角按 Z-Y-X（yaw-pitch-roll）。 */

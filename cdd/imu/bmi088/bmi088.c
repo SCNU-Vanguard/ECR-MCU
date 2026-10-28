@@ -1,6 +1,6 @@
 #include <string.h>
 #include "cdd/imu/bmi088/bmi088.h"
-#include "cdd/imu/bmi088/bmi088_config.h"
+#include "ins_config.h"
 #include "bsp/spi/bsp_spi.h"
 #include "bsp/gpio/bsp_gpio.h"
 #include "bsp/tick/bsp_tick.h"
@@ -133,7 +133,7 @@ typedef struct
 
 static bmi088_driver_t driver;
 static bool imu_present;
-/* 标定表（bmi088_config.h）一行一个轴 -> 拆成三个数组 */
+/* 标定表在当前兵种的 ins_config.h（-I robot/<r>）。一行一个轴，拆成三个数组。 */
 #define CALIBRATION_ACCEL_SCALE(_accel_scale, _accel_offset, _gyro_offset)      (_accel_scale),
 #define CALIBRATION_ACCEL_OFFSET(_accel_scale, _accel_offset, _gyro_offset)     (_accel_offset),
 #define CALIBRATION_GYRO_OFFSET(_accel_scale, _accel_offset, _gyro_offset)      (_gyro_offset),

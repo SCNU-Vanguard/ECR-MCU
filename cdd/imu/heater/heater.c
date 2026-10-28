@@ -1,5 +1,5 @@
 #include "cdd/imu/heater/heater.h"
-#include "cdd/imu/heater/heater_config.h"
+#include "ins_config.h"
 #include "bsp/pwm/bsp_pwm.h"
 #include "component/common/err.h"
 

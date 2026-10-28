@@ -24,3 +24,16 @@ int32_t vofa_send(const float *data, uint8_t count)
     }
     return ERR_OK;
 }
+
+int32_t vofa_send_raw(const void *data, uint32_t length)
+{
+    if (data == NULL || length == 0u)
+    {
+        return ERR_INVAL;
+    }
+    if (bsp_uart_write(UART_VOFA, data, length) != (int32_t)length)
+    {
+        return ERR_BUSY;
+    }
+    return ERR_OK;
+}
