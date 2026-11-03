@@ -9,7 +9,7 @@
  * DT7 的使能、自瞄、摩擦轮、拨弹由三档开关直接写入；表仍处理键盘，自定义查 OPERATE_ID_CUSTOM。
  * 掉线清掉切换锁存。 */
 
-#define OPERATE_MODE                    OPERATE_MODE_DT7
+#define OPERATE_MODE                    OPERATE_MODE_IMGTRANS_RC
 
 #define OPERATE_MOVE_MAX_M_S            1.5f
 #define OPERATE_YAW_RATE_RAD_S          2.0f
