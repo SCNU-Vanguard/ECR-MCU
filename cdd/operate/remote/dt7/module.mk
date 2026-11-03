@@ -1,0 +1,1 @@
+obj-$(CONFIG_CDD_OPERATE_REMOTE_DT7) += dt7.o

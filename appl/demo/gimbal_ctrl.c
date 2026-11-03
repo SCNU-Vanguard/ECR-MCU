@@ -1,42 +1,27 @@
 /* 云台：CAN2，pitch = gm6020，yaw = j4310。角度都用本板 IMU。
  * yaw 速度环仍用电机自己的转速。四个轮速做全向轮逆解算，自旋取负号作为速度前馈。
- * 左拨杆上且视觉锁定时跟自瞄，没锁定就用手。下拨杆或 IMU 无效时输出关掉。 */
+ * 自瞄打开且视觉锁定时跟自瞄，否则用手。手控增量来自 operate，seq 变了才加一次。
+ * 失能或 IMU 无效时输出关掉。 */
 #include "osal/period.h"
 #include "component/common/initcall.h"
 #include "component/common/err.h"
-#include "cdd/remote/dt7/dt7.h"
+#include "cdd/operate/operate.h"
 #include "cdd/imu/ins/ins.h"
 #include "cdd/motor/motor_init.h"
 #include "cdd/host/host.h"
 #include "host_config.h"
 #include "chassis_config.h"
 
-#define GIMBAL_DT_S              0.001f
 #define GIMBAL_PITCH_LIMIT_RAD   0.45f
-#define DT7_SWITCH_UP            1u
-#define DT7_SWITCH_MID           3u
-#define STICK_MAX                660.0f
-#define STICK_IGNORE             20
-#define YAW_RATE_RAD_S           2.0f
-#define PITCH_RATE_RAD_S         1.0f
 
 static ins_attitude_t gimbal_attitude;
-static bool pitch_on;
+static bool pitch_on;   /* 电机输出开着。关着的下一拍先对齐当前角 */
 static bool yaw_on;
-static bool tracking;
+static bool was_locked;  /* 上一拍自瞄锁定。刚退出时先对齐当前角 */
 static float pitch_target;
 static float yaw_target;
 static float yaw_measure;
 static float yaw_rate_ff;
-
-static float stick_to_rate(int16_t raw, float max_rad_s)
-{
-    if (raw > -STICK_IGNORE && raw < STICK_IGNORE)
-    {
-        return 0.0f;
-    }
-    return (float)raw / STICK_MAX * max_rad_s;
-}
 
 static float clamp_pitch(float angle)
 {
@@ -93,35 +78,30 @@ INIT_APP_STAGE2(gimbal_ctrl_init);
 
 static void gimbal_ctrl_run(void *argument)
 {
-    dt7_data_t remote;
     host_aim_target_t aim;
     float wheel_rad_s[CHASSIS_WHEEL_COUNT];
     chassis_speed_t speed;
+    static uint32_t applied_seq;
+    float yaw_delta_rad = 0.0f;
+    float pitch_delta_rad = 0.0f;
+    uint32_t seq = 0u;
     bool enabled = false;
-    bool vision = false;
-    float yaw_rate_rad_s = 0.0f;
-    float pitch_rate_rad_s = 0.0f;
+    bool use_aim = false;
     bool locked;
     bool usable;
 
     (void)argument;
     ins_get_attitude(&gimbal_attitude);
-    dt7_get(&remote);
-    if (remote.online && remote.switch_left == DT7_SWITCH_UP)
+    (void)operate_get(OPERATE_ID_ENABLE, &enabled, sizeof enabled);
+    (void)operate_get(OPERATE_ID_AIM, &use_aim, sizeof use_aim);
+    (void)operate_get(OPERATE_ID_SEQ, &seq, sizeof seq);
+    if (seq != applied_seq)
     {
-        enabled = true;
-        vision = true;
+        (void)operate_get(OPERATE_ID_YAW_DELTA, &yaw_delta_rad, sizeof yaw_delta_rad);
+        (void)operate_get(OPERATE_ID_PITCH_DELTA, &pitch_delta_rad, sizeof pitch_delta_rad);
+        applied_seq = seq;
     }
-    else if (remote.online && remote.switch_left == DT7_SWITCH_MID)
-    {
-        enabled = true;
-    }
-    if (enabled)
-    {
-        yaw_rate_rad_s = stick_to_rate(remote.channel[0], -YAW_RATE_RAD_S);
-        pitch_rate_rad_s = stick_to_rate(remote.channel[1], PITCH_RATE_RAD_S);
-    }
-    locked = vision && vision_locked(&aim);
+    locked = use_aim && vision_locked(&aim);
     usable = enabled && gimbal_attitude.valid;
 
     yaw_rate_ff = 0.0f;
@@ -132,15 +112,15 @@ static void gimbal_ctrl_run(void *argument)
             pitch_target = clamp_pitch(aim.pitch_rad);
             yaw_target = aim.yaw_rad;
         }
-        else if (!pitch_on || tracking)
+        else if (!pitch_on || was_locked)
         {
             pitch_target = gimbal_attitude.pitch_rad;
             yaw_target = gimbal_attitude.yaw_rad;
         }
         else
         {
-            pitch_target = clamp_pitch(pitch_target + pitch_rate_rad_s * GIMBAL_DT_S);
-            yaw_target += yaw_rate_rad_s * GIMBAL_DT_S;
+            pitch_target = clamp_pitch(pitch_target + pitch_delta_rad);
+            yaw_target += yaw_delta_rad;
         }
         yaw_measure = gimbal_attitude.yaw_rad;
         if (wheel_rates(wheel_rad_s) && omni_inverse(&omni, wheel_rad_s, &speed) == ERR_OK)
@@ -173,7 +153,7 @@ static void gimbal_ctrl_run(void *argument)
             yaw_on = false;
         }
     }
-    tracking = locked && usable;
+    was_locked = locked && usable;
 
     (void)motor_compute_bus(CAN_BUS2);
     (void)motor_send_bus(CAN_BUS2);

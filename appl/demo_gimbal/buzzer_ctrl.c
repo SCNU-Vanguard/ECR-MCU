@@ -11,11 +11,6 @@
 
 static uint32_t tick_count;
 
-/**********************************************************
-* @ 函数名: buzzer_ctrl_init
-* @ 函数作用: 启动 2000 Hz 开机提示音，采用 50% 占空比
-* @ 返回数值: ERR_OK 表示初始化流程结束
-**********************************************************/
 static int32_t buzzer_ctrl_init(void)
 {
     (void)buzzer_set(BUZZER_TONE_HZ, 500000u);
@@ -24,11 +19,6 @@ static int32_t buzzer_ctrl_init(void)
 }
 INIT_APP_STAGE2(buzzer_ctrl_init);
 
-/**********************************************************
-* @ 函数名: buzzer_ctrl_run
-* @ 函数作用: 每 30 秒输出一次约 100 ms 的运行提示音
-* @ 参数信息: argument 周期任务参数，此处未使用
-**********************************************************/
 static void buzzer_ctrl_run(void *argument)
 {
     (void)argument;

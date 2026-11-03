@@ -4,4 +4,5 @@ obj-$(CONFIG_APPL_DEMO_CHASSIS_HEATER_CTRL) += heater_ctrl.o
 obj-$(CONFIG_APPL_DEMO_CHASSIS_CHASSIS_CTRL) += chassis_ctrl.o
 obj-$(CONFIG_APPL_DEMO_CHASSIS_YAW_CTRL) += yaw_ctrl.o
 obj-$(CONFIG_APPL_DEMO_CHASSIS_SHOOT_CTRL) += shoot_ctrl.o
+obj-$(CONFIG_APPL_DEMO_CHASSIS_INTERBOARD_CTRL) += interboard_ctrl.o
 obj-$(CONFIG_APPL_DEMO_CHASSIS_UI_CTRL) += ui_ctrl.o

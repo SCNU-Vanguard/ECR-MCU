@@ -16,11 +16,6 @@ static bool buzzer_ready;
 static bool buzzer_ok;
 static uint32_t tick_count;
 
-/**********************************************************
-* @ 函数名: buzzer_ctrl_init
-* @ 函数作用: 播放开机提示音 ready，并安排首次运行提示在 60 秒后播放
-* @ 返回数值: ERR_OK 为成功，其他值为启动播放失败的错误码
-**********************************************************/
 static int32_t buzzer_ctrl_init(void)
 {
     int32_t ret = os_mutex_init(&buzzer_mutex);
@@ -34,11 +29,6 @@ static int32_t buzzer_ctrl_init(void)
 }
 INIT_APP_STAGE2(buzzer_ctrl_init);
 
-/**********************************************************
-* @ 函数名: buzzer_run
-* @ 函数作用: 推进曲目播放，每 60 秒播放一次 startup；输出失败后停止后续提示
-* @ 参数信息: argument 周期任务参数，此处未使用
-**********************************************************/
 static void buzzer_run(void *argument)
 {
     (void)argument;
@@ -63,56 +53,13 @@ static void buzzer_run(void *argument)
     tick_count ++;
     os_mutex_unlock(&buzzer_mutex);
 }
-/* 全部音乐一起播放，曲间静音 500 ms，播完停止。
- * 启用此代码块、停用上面的初始化注册，并将任务回调改为 buzzer_play_all 即可试听。 */
-#if 0
-/**********************************************************
-* @ 函数名: buzzer_play_all
-* @ 函数作用: 按曲库顺序试听全部曲目，曲间静音 500 ms，全部播完后停止
-* @ 参数信息: argument 周期任务参数，此处未使用
-**********************************************************/
-static void buzzer_play_all(void *argument)
-{
-    static uint16_t song_index;
-    static bool song_started;
-    static uint32_t next_song_ms;
-    (void)argument;
-    if (buzzer_tick() != ERR_OK)
-    {
-        song_index = buzzer_song_count;
-        return;
-    }
-    if (buzzer_is_playing()) return;
-
-    uint32_t now = bsp_tick_ms();
-    if (song_started)
-    {
-        song_started = false;
-        next_song_ms = now + 500u;
-        return;
-    }
-    if (song_index >= buzzer_song_count || (int32_t)(now - next_song_ms) < 0) return;
-    if (buzzer_play(&buzzer_songs[song_index], BUZZER_RUN_VOLUME) != ERR_OK)
-    {
-        song_index = buzzer_song_count;
-        return;
-    }
-    song_index++;
-    song_started = true;
-}
-#endif
-
 PERIOD_TASK_DEFINE(buzzer_ctrl_task, OS_FREQ_1000HZ, OS_PRIORITY_LOWEST, OS_STACK_SMALL, buzzer_run, NULL);
 
 #ifdef CONFIG_COMPONENT_SHELL
 #include <string.h>
 #include "component/shell/shell_cmd.h"
 
-/**********************************************************
-* @ 函数名: shell_buzzer_play
-* @ 函数作用: 按名称播放曲目；不带参数时列出曲库，you 为 robomaster_you 的别名
-* @ 返回数值: ERR_OK 为启动成功，ERR_BUSY 为播放中或锁忙，其他值为参数或输出错误码
-**********************************************************/
+/* 不带参数时列出曲库。you 是 robomaster_you 的别名。 */
 static int shell_buzzer_play(int argc, char *argv[])
 {
     if (argc != 2)

@@ -2,8 +2,7 @@
  * 整机失能或板间离线时输出关掉。允许动作但不开火时，速度目标为 0。 */
 #include "osal/period.h"
 #include "cdd/motor/motor_init.h"
-#include "cdd/interboard/interboard.h"
-#include "interboard_config.h"
+#include "interboard_ctrl.h"
 
 #define SHOOT_TRIGGER_RAD_S  40.0f
 
@@ -11,14 +10,12 @@ static bool trigger_active;
 
 static void shoot_ctrl_run(void *argument)
 {
-    interboard_link_t link;
     interboard_request_t request;
     bool allowed;
     bool spinning;
 
     (void)argument;
-    interboard_get_link(&link);
-    allowed = link.online && interboard_load_request(&request) && request.motion.enabled != 0u;
+    allowed = interboard_ctrl_get(&request) && request.motion.enabled != 0u;
     spinning = allowed && request.shoot.trigger_on != 0u;
     if (allowed)
     {

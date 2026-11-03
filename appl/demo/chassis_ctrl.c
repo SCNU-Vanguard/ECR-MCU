@@ -1,26 +1,21 @@
-/* 底盘：CAN1 四个 m3508，全向轮，速度环。速度直接读 DT7，前后左右是云台坐标系。
- * yaw 电机多圈角度把它们旋到车体坐标，自旋不转。左拨杆下或遥控器离线时输出关掉。
+/* 底盘：CAN1 四个 m3508，全向轮，速度环。速度读 operate，前后左右是云台坐标系。
+ * 导航打开时改跟上位机速度；这一拍没有速度就停，不用摇杆顶上。
+ * yaw 电机多圈角度把它们旋到车体坐标。失能时输出关掉。
  * 功率只限制这四个轮。超电在 CAN2。 */
 #include <math.h>
 #include "osal/period.h"
 #include "component/common/initcall.h"
 #include "component/common/err.h"
-#include "cdd/remote/dt7/dt7.h"
+#include "cdd/operate/operate.h"
 #include "cdd/motor/motor_init.h"
 #include "cdd/supercap/supercap.h"
 #include "cdd/referee/referee.h"
+#include "cdd/host/host.h"
 #include "component/power/power.h"
 #include "chassis_config.h"
 #include "supercap_config.h"
 #include "power_config.h"
-
-#define DT7_SWITCH_UP         1u
-#define DT7_SWITCH_MID        3u
-#define STICK_MAX             660.0f
-#define STICK_IGNORE          20
-#define DIAL_IGNORE           100
-#define SPEED_MAX_M_S         1.5f
-#define SPIN_RAD_S            2.0f
+#include "host_config.h"
 
 static dji_motor_t *const chassis_wheel[CHASSIS_WHEEL_COUNT] =
 {
@@ -42,13 +37,32 @@ static void wheels_set_active(bool active)
     wheels_on = active;
 }
 
-static float stick_to_speed(int16_t raw)
+static void chassis_command(bool nav, float *forward_m_s, float *right_m_s, float *spin_rad_s)
 {
-    if (raw > -STICK_IGNORE && raw < STICK_IGNORE)
+    *forward_m_s = 0.0f;
+    *right_m_s = 0.0f;
+    *spin_rad_s = 0.0f;
+    (void)operate_get(OPERATE_ID_FORWARD, forward_m_s, sizeof *forward_m_s);
+    (void)operate_get(OPERATE_ID_RIGHT, right_m_s, sizeof *right_m_s);
+    (void)operate_get(OPERATE_ID_SPIN, spin_rad_s, sizeof *spin_rad_s);
+    if (nav)
     {
-        return 0.0f;
+        *forward_m_s = 0.0f;
+        *right_m_s = 0.0f;
+        *spin_rad_s = 0.0f;
+#ifdef CONFIG_CDD_HOST_NAV
+        {
+            host_nav_speed_t host_nav;
+
+            if (host_transfer(HOST_CMD_NAV_SPEED, &host_nav, sizeof host_nav) == ERR_OK)
+            {
+                *forward_m_s = host_nav.forward_m_s;
+                *right_m_s = host_nav.right_m_s;
+                *spin_rad_s = host_nav.spin_rad_s;
+            }
+        }
+#endif
     }
-    return (float)raw / STICK_MAX * SPEED_MAX_M_S;
 }
 
 static float chassis_power_limit_w(void)
@@ -119,33 +133,22 @@ INIT_APP_STAGE2(chassis_ctrl_init);
 
 static void chassis_ctrl_run(void *argument)
 {
-    dt7_data_t remote;
     chassis_speed_t speed;
     float wheel_rad_s[CHASSIS_WHEEL_COUNT];
-    bool running;
+    float forward_m_s;
+    float right_m_s;
+    float spin_rad_s;
+    bool enabled = false;
+    bool nav = false;
 
     (void)argument;
-    dt7_get(&remote);
-    running = remote.online &&
-              (remote.switch_left == DT7_SWITCH_UP || remote.switch_left == DT7_SWITCH_MID);
-    if (running)
+    (void)operate_get(OPERATE_ID_ENABLE, &enabled, sizeof enabled);
+    (void)operate_get(OPERATE_ID_NAV, &nav, sizeof nav);
+    if (enabled)
     {
-        gimbal_to_chassis(yaw_j4310.base.total_angle_rad,
-                          stick_to_speed(remote.channel[3]),
-                          stick_to_speed(remote.channel[2]),
-                          &speed);
-        if (remote.wheel > DIAL_IGNORE)
-        {
-            speed.spin_rad_s = SPIN_RAD_S;
-        }
-        else if (remote.wheel < -DIAL_IGNORE)
-        {
-            speed.spin_rad_s = -SPIN_RAD_S;
-        }
-        else
-        {
-            speed.spin_rad_s = 0.0f;
-        }
+        chassis_command(nav, &forward_m_s, &right_m_s, &spin_rad_s);
+        gimbal_to_chassis(yaw_j4310.base.total_angle_rad, forward_m_s, right_m_s, &speed);
+        speed.spin_rad_s = spin_rad_s;
         if (!wheels_on)
         {
             wheels_set_active(true);
@@ -163,7 +166,7 @@ static void chassis_ctrl_run(void *argument)
         wheels_set_active(false);
     }
     (void)motor_compute_bus(CAN_BUS1);
-    if (running)
+    if (enabled)
     {
         chassis_power_apply();
     }

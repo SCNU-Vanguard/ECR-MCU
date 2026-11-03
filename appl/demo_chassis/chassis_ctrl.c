@@ -1,7 +1,6 @@
-/* 底盘：CAN1 四个 m3508，全向轮，速度环。速度来自云台板，前后左右是云台坐标系。
- * yaw 电机多圈角度把它们旋到车体坐标，自旋不转。失能或板间离线时输出关掉。
- * 功率只限制这四个轮。超电在 CAN2，裁判功率上限从本板裁判系统写入。
- * 应答带回车体速度、yaw 电机角度、17 mm 枪口热量和热量上限。 */
+/* 底盘：CAN1 四个 m3508，全向轮，速度环。速度来自云台请求，前后左右是云台坐标系。
+ * yaw 电机多圈角度把它们旋到车体坐标，自旋不转。失能或没有请求时输出关掉。
+ * 功率只限制这四个轮。超电在 CAN2，裁判功率上限从本板裁判系统写入。 */
 #include <math.h>
 #include "osal/period.h"
 #include "component/common/initcall.h"
@@ -9,9 +8,8 @@
 #include "cdd/motor/motor_init.h"
 #include "cdd/supercap/supercap.h"
 #include "cdd/referee/referee.h"
-#include "cdd/interboard/interboard.h"
 #include "component/power/power.h"
-#include "interboard_config.h"
+#include "interboard_ctrl.h"
 #include "chassis_config.h"
 #include "supercap_config.h"
 #include "power_config.h"
@@ -94,21 +92,6 @@ static void gimbal_to_chassis(float yaw_rad, float forward_m_s, float right_m_s,
     speed->right_m_s = -forward_m_s * sine + right_m_s * cosine;
 }
 
-static bool chassis_measured(chassis_speed_t *speed)
-{
-    float wheel_rad_s[CHASSIS_WHEEL_COUNT];
-
-    for (uint32_t wheel_index = 0; wheel_index < CHASSIS_WHEEL_COUNT; wheel_index++)
-    {
-        if (!motor_online(&chassis_wheel[wheel_index]->base))
-        {
-            return false;
-        }
-        wheel_rad_s[wheel_index] = chassis_wheel[wheel_index]->base.speed_rad_s / M3508_GEAR_RATIO;
-    }
-    return omni_inverse(&omni, wheel_rad_s, speed) == ERR_OK;
-}
-
 static int32_t chassis_ctrl_init(void)
 {
     supercap_enable(true);
@@ -119,19 +102,15 @@ INIT_APP_STAGE2(chassis_ctrl_init);
 
 static void chassis_ctrl_run(void *argument)
 {
-    interboard_link_t link;
     interboard_request_t request;
-    interboard_reply_t reply;
     chassis_speed_t speed;
-    chassis_speed_t measured;
     float wheel_rad_s[CHASSIS_WHEEL_COUNT];
     float yaw_motor_rad;
     bool running;
 
     (void)argument;
     yaw_motor_rad = yaw_j4310.base.total_angle_rad;
-    interboard_get_link(&link);
-    running = link.online && interboard_load_request(&request) && request.motion.enabled != 0u;
+    running = interboard_ctrl_get(&request) && request.motion.enabled != 0u;
     speed.forward_m_s = 0.0f;
     speed.right_m_s = 0.0f;
     speed.spin_rad_s = 0.0f;
@@ -162,32 +141,15 @@ static void chassis_ctrl_run(void *argument)
     }
     (void)motor_send_bus(CAN_BUS1);
 
-    interboard_load_reply(&reply);
     {
         static referee_info_t referee;
 
         referee_get(&referee);
-        reply.heat = referee.power_heat.shooter_17mm_barrel_heat;
-        reply.heat_limit = referee.performance.shooter_barrel_heat_limit;
         if (referee.online && referee.performance.chassis_power_limit != 0u)
         {
             supercap_set_referee(referee.performance.chassis_power_limit, referee.power_heat.buffer_energy);
         }
     }
-    reply.yaw_motor_rad = yaw_motor_rad;
-    if (chassis_measured(&measured))
-    {
-        reply.forward_m_s = measured.forward_m_s;
-        reply.right_m_s = measured.right_m_s;
-        reply.spin_rad_s = measured.spin_rad_s;
-    }
-    else
-    {
-        reply.forward_m_s = speed.forward_m_s;
-        reply.right_m_s = speed.right_m_s;
-        reply.spin_rad_s = speed.spin_rad_s;
-    }
-    interboard_store_reply(&reply);
     (void)supercap_send();
 }
 PERIOD_TASK_DEFINE(chassis_ctrl_task, OS_FREQ_1000HZ, OS_PRIORITY_MEDIUM, OS_STACK_MEDIUM, chassis_ctrl_run, NULL);

@@ -1,5 +1,5 @@
 /* 上位机：100 Hz。打开的协议在这一次任务里发出去。
- * 自瞄目标、目标移速只收不发，云台和底盘先不跟。角度用 yaw_rad。 */
+ * 自瞄目标和导航速度由云台、底盘自己取。发出去的姿态用 yaw_rad。 */
 #include "osal/period.h"
 #include "osal/osal.h"
 #include "component/common/err.h"

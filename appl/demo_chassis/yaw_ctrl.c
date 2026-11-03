@@ -7,8 +7,7 @@
 #include "component/common/initcall.h"
 #include "component/common/err.h"
 #include "cdd/motor/motor_init.h"
-#include "cdd/interboard/interboard.h"
-#include "interboard_config.h"
+#include "interboard_ctrl.h"
 #include "chassis_config.h"
 
 static float yaw_measure;
@@ -46,15 +45,13 @@ INIT_APP_STAGE2(yaw_ctrl_init);
 
 static void yaw_ctrl_run(void *argument)
 {
-    interboard_link_t link;
     interboard_request_t request;
     float wheel_rad_s[CHASSIS_WHEEL_COUNT];
     chassis_speed_t speed;
     bool running;
 
     (void)argument;
-    interboard_get_link(&link);
-    running = link.online && interboard_load_request(&request) &&
+    running = interboard_ctrl_get(&request) &&
               request.motion.enabled != 0u && request.motion.yaw_valid != 0u;
     yaw_rate_ff = 0.0f;
     if (running)
