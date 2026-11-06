@@ -300,9 +300,10 @@ static void from_dt7(void)
         publish(&out);
         return;
     }
-    /* 左开关：上或中为使能，上为自瞄。右开关：上或中为摩擦轮，上为拨弹。 */
+    /* 左开关：上或中为使能，上档同时开自瞄和导航。右开关：上或中为摩擦轮，上为拨弹。 */
     out.enabled = remote.switch_left == DT7_SWITCH_UP || remote.switch_left == DT7_SWITCH_MID;
     out.use_aim = remote.switch_left == DT7_SWITCH_UP;
+    out.use_nav = remote.switch_left == DT7_SWITCH_UP;
     out.friction = remote.switch_right == DT7_SWITCH_UP || remote.switch_right == DT7_SWITCH_MID;
     out.shoot = remote.switch_right == DT7_SWITCH_UP;
     out.forward_m_s = stick(remote.channel[3], OPERATE_MOVE_MAX_M_S);
@@ -349,11 +350,12 @@ static void from_imgtrans(void)
 #if OPERATE_MODE == OPERATE_MODE_IMGTRANS_RC
                stick(in.channel[0], -OPERATE_YAW_RATE_RAD_S),
                stick(in.channel[1], OPERATE_PITCH_RATE_RAD_S),
+               0.0f, 0.0f);
 #else
                0.0f, 0.0f,
-#endif
                -(float)in.mouse_x * OPERATE_MOUSE_YAW_RAD_PER_COUNT,
                (float)in.mouse_y * OPERATE_MOUSE_PITCH_RAD_PER_COUNT);
+#endif
     if (new_frame)
     {
         last_frames = in.frames;

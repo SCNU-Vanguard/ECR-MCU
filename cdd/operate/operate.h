@@ -49,8 +49,8 @@
 
 /* 查询寄存器。operate_get 的 size 必须等于类型宽度。
  * FORWARD / RIGHT 是 m/s，SPIN 是 rad/s，带正负。
- * YAW_DELTA 向右为负，PITCH_DELTA 向上为正，是这一帧要转的角：
- * 摇杆角速度乘上一帧时间戳到这一帧的时间，鼠标增量加在同一帧。
+ * YAW_DELTA 向右为负，PITCH_DELTA 向上为正，是这一帧要转的角。
+ * 图传遥控和 DT7 只取摇杆通道，角速度乘上一帧时间戳到这一帧的时间。图传键盘只加鼠标。
  * SEQ 每来一帧输入加一。seq 变了再把这份增量加上去。 */
 enum
 {

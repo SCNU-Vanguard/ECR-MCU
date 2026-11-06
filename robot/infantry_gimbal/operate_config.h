@@ -6,7 +6,7 @@
  *
  * 表的一列：输入槽、键、按住或切换、图传遥控读哪一路。
  * 按住或切换只作用在键上。图传遥控跟着对应电平。拨轮正负和底盘摇杆不在表里。
- * DT7 的使能、自瞄、摩擦轮、拨弹由三档开关直接写入；表仍处理键盘，自定义查 OPERATE_ID_CUSTOM。
+ * DT7 的使能、自瞄、导航、摩擦轮、拨弹由三档开关直接写入。左开关上档同时开自瞄和导航。表仍处理键盘，自定义查 OPERATE_ID_CUSTOM。
  * 掉线清掉切换锁存。 */
 
 #define OPERATE_MODE                    OPERATE_MODE_DT7
@@ -31,5 +31,5 @@
     OPERATE_REG(OPERATE_IN_BACK,     OPERATE_KEY_S,       OPERATE_AS_HOLD,   OPERATE_RC_NONE) \
     OPERATE_REG(OPERATE_IN_LEFT,     OPERATE_KEY_A,       OPERATE_AS_HOLD,   OPERATE_RC_NONE) \
     OPERATE_REG(OPERATE_IN_RIGHT,    OPERATE_KEY_D,       OPERATE_AS_HOLD,   OPERATE_RC_NONE) \
-    OPERATE_REG(OPERATE_IN_CUSTOM,   OPERATE_KEY_C,       OPERATE_AS_HOLD,   OPERATE_RC_CUSTOM_RIGHT)
+    OPERATE_REG(OPERATE_IN_CUSTOM,   OPERATE_KEY_C,       OPERATE_AS_TOGGLE, OPERATE_RC_CUSTOM_RIGHT)
 #endif
