@@ -75,10 +75,10 @@ INIT_BSP_STAGE1(board_spi_pins_init);
 const bsp_pwm_cfg_t board_pwm_cfg[PWM_NUM] =
 {
     /* 逻辑口             定时器句柄, 通道,          定时器时钟(Hz) */
-    [PWM_HEATER] = { &htim3,  TIM_CHANNEL_4, 240000000u },   /* PB1  TIM3_CH4  */
-    [PWM_BUZZER] = { &htim12, TIM_CHANNEL_2, 240000000u },   /* PB15 TIM12_CH2 */
-    /* TIM1：Cube 里预分频 240-1、周期 20000-1，脉宽单位才是微秒 */
-    [PWM_SERVO] = { &htim1,  TIM_CHANNEL_1, 240000000u },   /* PE9  TIM1_CH1 */
+    [PWM_HEATER] = { &htim3,  TIM_CHANNEL_4, 275000000u },   /* PB1  TIM3_CH4  */
+    [PWM_BUZZER] = { &htim12, TIM_CHANNEL_2, 275000000u },   /* PB15 TIM12_CH2 */
+    /* TIM1：Cube 里预分频 275-1、周期 20000-1，脉宽单位才是微秒 */
+    [PWM_SERVO] = { &htim1,  TIM_CHANNEL_1, 275000000u },   /* PE9  TIM1_CH1 */
 };
 #endif
 
