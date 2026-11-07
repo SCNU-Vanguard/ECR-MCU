@@ -18,6 +18,7 @@ PLATFORM_INC := \
     $(P)/Middlewares/ST/STM32_USB_Device_Library/Core/Inc \
     $(P)/Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc \
     $(P)/Drivers/CMSIS/Device/ST/STM32H7xx/Include \
+    $(P)/Drivers/CMSIS/RTOS2/Include \
     $(P)/Drivers/CMSIS/Include
 
 # 用通配符而不是抄 CubeIDE 的文件清单：CubeMX 里新增外设后重新生成，这里不用改。

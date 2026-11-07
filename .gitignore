@@ -26,6 +26,7 @@ Release/
 
 # STM32CubeMX 本地缓存（.ioc 需要提交）
 .mxproject
+/.emberprobe-cubemx-audit/
 
 # STM32CubeIDE
 .metadata/

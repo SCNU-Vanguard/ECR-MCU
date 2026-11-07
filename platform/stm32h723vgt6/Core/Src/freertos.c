@@ -21,7 +21,8 @@
 #include "FreeRTOS.h"
 #include "task.h"
 #include "main.h"
-#include "cmsis_os.h"
+#include "FreeRTOS.h"
+#include "cmsis_os2.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -76,7 +77,7 @@ void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 /* Hook prototypes */
 void vApplicationIdleHook(void);
 void vApplicationTickHook(void);
-void vApplicationStackOverflowHook(xTaskHandle xTask, signed char *pcTaskName);
+void vApplicationStackOverflowHook(xTaskHandle xTask, char *pcTaskName);
 void vApplicationMallocFailedHook(void);
 
 /* USER CODE BEGIN 2 */
@@ -95,7 +96,7 @@ void vApplicationTickHook( void )
 /* USER CODE END 3 */
 
 /* USER CODE BEGIN 4 */
-void vApplicationStackOverflowHook(xTaskHandle xTask, signed char *pcTaskName)
+void vApplicationStackOverflowHook(xTaskHandle xTask, char *pcTaskName)
 {
   /* configCHECK_FOR_STACK_OVERFLOW = 2 时，检测到栈溢出会调用这里；处理逻辑在 OS 抽象层 */
   (void)xTask;
