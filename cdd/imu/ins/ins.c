@@ -14,6 +14,21 @@
 #include "cdd/imu/bmi088/bmi088.h"
 #include "cdd/imu/ins/ins.h"
 #include "ins_config.h"
+#include "bsp/tick/bsp_tick.h"
+
+#ifndef INS_ASSUME_STATIONARY
+#define INS_ASSUME_STATIONARY 0U
+#endif
+#if INS_ASSUME_STATIONARY != 0U && INS_ASSUME_STATIONARY != 1U
+#error "INS_ASSUME_STATIONARY must be 0 or 1"
+#endif
+
+#ifdef CONFIG_CDD_IMU_HEATER
+#define INS_TEMP_ENABLE_MIN_C       (IMU_HEATER_TARGET_C - 2.0f)
+#define INS_TEMP_ENABLE_MAX_C       (IMU_HEATER_TARGET_C + 2.0f)
+#define INS_TEMP_SETTLE_US          2500000u
+#endif
+#define INS_TEMP_MAX_AGE_US         500000u
 
 /* 加速度计样本比陀螺仪样本旧过这么多就认为过期，这一拍加速度计不参与校正（只用陀螺积分）：两个加速度计周期 + 1 ms */
 #define INS_ACCEL_MAX_AGE_US        (2u * BMI088_ACCEL_SAMPLE_PERIOD_US + 1000u)
@@ -24,6 +39,9 @@ typedef struct
     uint32_t gap_count;             /* 陀螺仪序号不连续（丢样本） */
     uint32_t stale_accel_count;
     uint32_t reject_count;          /* ahrs_update 拒绝或失败 */
+    uint32_t gyro_only_reject_count;/* 加速度无效、仅用陀螺仪输入时被拒绝的帧数 */
+    uint32_t temperature_wait_count;/* 温度样本无效，或加热版尚未达到稳定温度时跳过的帧数 */
+    uint32_t temperature_gate_reset_count;
     uint32_t timeout_count;
     float    last_dt_s;
 } ins_stats_t;
@@ -36,6 +54,51 @@ static volatile uint32_t publish_version;                  /* 奇数 = 正在写
 static bool have_previous_frame;
 static uint32_t previous_gyro_timestamp_us;
 static uint32_t previous_gyro_sequence;
+static bool ins_temperature_gate_open;
+static bool ins_temperature_waiting;
+static uint32_t ins_temperature_ready_since_us;
+static uint32_t ins_temperature_last_sequence;
+static uint32_t ins_temperature_last_update_us;
+
+#ifdef CONFIG_CDD_IMU_HEATER
+static bool ins_temperature_in_range(int16_t temperature_raw)
+{
+    const float temperature_c = 0.125f * (float)temperature_raw + 23.0f;
+    return temperature_c >= INS_TEMP_ENABLE_MIN_C && temperature_c <= INS_TEMP_ENABLE_MAX_C;
+}
+#endif
+
+static bool ins_temperature_settled(uint32_t gyro_timestamp_us)
+{
+#ifdef CONFIG_CDD_IMU_HEATER
+    return (uint32_t)(gyro_timestamp_us - ins_temperature_ready_since_us) >= INS_TEMP_SETTLE_US;
+#else
+    (void)gyro_timestamp_us;
+    return true;
+#endif
+}
+
+/* 在 publish_version 写入区间内调用，只清除姿态，不影响传感器快照。 */
+static void clear_attitude(void)
+{
+    published_attitude.valid = false;
+    memset(published_attitude.quaternion, 0, sizeof published_attitude.quaternion);
+    published_attitude.roll_rad = 0.0f;
+    published_attitude.pitch_rad = 0.0f;
+    published_attitude.yaw_rad = 0.0f;
+    published_attitude.yaw_total_rad = 0.0f;
+    published_attitude.update_count = 0u;
+    published_attitude.ins_cost_time = 0u;
+}
+
+static void invalidate_attitude(void)
+{
+    publish_version++;
+    __DMB();
+    clear_attitude();
+    __DMB();
+    publish_version++;
+}
 
 /* ---- 陀螺零偏标定：静止采集 INS_CALI_DURATION_S 秒，在本任务里累加（和姿态解算共用同一帧数据）----
  * 新零偏 = 当前表里的零偏 + 采集期间"已扣除当前零偏的角速度"的平均值。
@@ -102,19 +165,34 @@ static void calibration_feed(const bmi088_sample_t *sample)
     }
 }
 
-static void publish_attitude(const bmi088_sample_t *sample)
+static void publish_snapshot(const bmi088_sample_t *sample, bool temperature_valid,
+                             bool clear_pose, bool update_pose, uint32_t frame_begin_cycles)
 {
     publish_version++;
     __DMB();
-    published_attitude.valid = ahrs.update_count > 0u;
-    memcpy(published_attitude.quaternion, ahrs.quaternion, sizeof published_attitude.quaternion);
-    published_attitude.roll_rad = ahrs.roll_rad;
-    published_attitude.pitch_rad = ahrs.pitch_rad;
-    published_attitude.yaw_rad = ahrs.yaw_rad;
-    published_attitude.yaw_total_rad = ahrs.yaw_total_rad;
     memcpy(published_attitude.gyro_rad_s, sample->gyro_rad_s, sizeof published_attitude.gyro_rad_s);
+    memcpy(published_attitude.accel_m_s2, sample->accel_m_s2, sizeof published_attitude.accel_m_s2);
     published_attitude.temperature_c = sample->temperature_c;
-    published_attitude.update_count = ahrs.update_count;
+    published_attitude.temperature_valid = temperature_valid;
+    published_attitude.imu_frame_count++;
+    if (clear_pose)
+    {
+        clear_attitude();
+    }
+    else if (update_pose)
+    {
+        published_attitude.valid = ahrs.update_count > 0u;
+        memcpy(published_attitude.quaternion, ahrs.quaternion, sizeof published_attitude.quaternion);
+        published_attitude.roll_rad = ahrs.roll_rad;
+        published_attitude.pitch_rad = ahrs.pitch_rad;
+        published_attitude.yaw_rad = ahrs.yaw_rad;
+        published_attitude.yaw_total_rad = ahrs.yaw_total_rad;
+        published_attitude.update_count = ahrs.update_count;
+        /* 姿态输出已写完再取终点；无符号周期差支持一次 CYCCNT 回绕，区间须短于一个计数周期。
+         * 与 Embedded_Frame 的 last_us 一致：取数前到成功输出，区间内抢占/中断仍计入。 */
+        const uint32_t frame_end_cycles = bsp_cycle_count();
+        published_attitude.ins_cost_time = (uint32_t)((uint64_t)(frame_end_cycles - frame_begin_cycles) * 1000000u / bsp_cycle_freq_hz());
+    }
     __DMB();
     publish_version++;
 }
@@ -144,7 +222,10 @@ static void ins_run(void *argument, const uint8_t *data, uint16_t length)
     {
         ins_stats.timeout_count++;
         have_previous_frame = false;
-        ahrs_break_continuity(&ahrs);
+        if (ins_temperature_gate_open) ins_stats.temperature_gate_reset_count++;
+        ins_temperature_gate_open = false;
+        ins_temperature_waiting = false;
+        invalidate_attitude();
         (void)bmi088_recover();
         return;
     }
@@ -152,6 +233,9 @@ static void ins_run(void *argument, const uint8_t *data, uint16_t length)
     {
         return;
     }
+    /* 从本任务复制已收到的原始帧之前计时，包含快照、换算/标定、检查、解算和输出。
+     * 不回溯到 DRDY，也不包含此前的 SPI DMA、事件入队/出队或调度等待。 */
+    const uint32_t frame_begin_cycles = bsp_cycle_count();
     memcpy(&frame, data, sizeof frame);
     ins_stats.frame_count++;
 
@@ -172,33 +256,83 @@ static void ins_run(void *argument, const uint8_t *data, uint16_t length)
     ins_stats.last_dt_s = dt_s;
 
     bmi088_convert(&frame, &last_sample);
+    if (frame.temperature_sequence != ins_temperature_last_sequence)
+    {
+        ins_temperature_last_sequence = frame.temperature_sequence;
+        ins_temperature_last_update_us = frame.gyro_timestamp_us;
+    }
+#ifdef CONFIG_CDD_IMU_HEATER
+    const bool temperature_ready = frame.temperature_sequence > 0u &&
+                                   (uint32_t)(frame.gyro_timestamp_us - ins_temperature_last_update_us) <= INS_TEMP_MAX_AGE_US &&
+                                   ins_temperature_in_range(frame.temperature_raw);
+#else
+    /* 无加热模式不依赖温度寄存器，首帧即可启动姿态解算。 */
+    const bool temperature_ready = true;
+#endif
+    if (temperature_ready)
+    {
+        if (!ins_temperature_gate_open)
+        {
+            if (!ins_temperature_waiting)
+            {
+                ins_temperature_waiting = true;
+                ins_temperature_ready_since_us = frame.gyro_timestamp_us;
+            }
+            if (ins_temperature_settled(frame.gyro_timestamp_us))
+            {
+                ins_temperature_gate_open = true;
+                ins_temperature_waiting = false;
+                have_previous_frame = false;
+                (void)ahrs_start(&ahrs, INS_ALGORITHM, 1.0f / (float)BMI088_RATE_HZ);
+            }
+        }
+    }
+    else
+    {
+        if (ins_temperature_gate_open) ins_stats.temperature_gate_reset_count++;
+        ins_temperature_gate_open = false;
+        ins_temperature_waiting = false;
+    }
+    if (!ins_temperature_gate_open)
+    {
+        have_previous_frame = false;
+        ins_stats.temperature_wait_count++;
+        publish_snapshot(&last_sample, frame.temperature_sequence > 0u, true, false, frame_begin_cycles);
+        return;
+    }
     calibration_feed(&last_sample);
     memcpy(ahrs_sample.gyro_rad_s, last_sample.gyro_rad_s, sizeof ahrs_sample.gyro_rad_s);
     memcpy(ahrs_sample.accel_m_s2, last_sample.accel_m_s2, sizeof ahrs_sample.accel_m_s2);
     ahrs_sample.dt_s = dt_s;
     ahrs_sample.gyro_clipped = last_sample.gyro_clipped;
     ahrs_sample.accel_clipped = last_sample.accel_clipped;
-    ahrs_sample.stationary = false;
+    ahrs_sample.stationary = (INS_ASSUME_STATIONARY != 0U);
 
     if ((uint32_t)(frame.gyro_timestamp_us - frame.accel_timestamp_us) > INS_ACCEL_MAX_AGE_US)
     {
         ins_stats.stale_accel_count++;
         ahrs_sample.accel_clipped = true;                   /* 借用"加速度计不可信"标志：这一拍只积分陀螺 */
     }
+    bool gyro_only_update = ahrs_sample.accel_clipped;
 
     int32_t update_result = ahrs_update(&ahrs, &ahrs_sample);
 
-    if (update_result == ERR_OK)
+    if (update_result != ERR_OK)
     {
-        publish_attitude(&last_sample);
+        /* 未成功输出时保留上一有效帧的姿态及耗时，避免两者对应不同帧。 */
+        if (update_result != ERR_BUSY)
+        {
+            ins_stats.reject_count++;
+            if (gyro_only_update)
+            {
+                ins_stats.gyro_only_reject_count++;
+            }
+        }
     }
-    else if (update_result != ERR_BUSY)
-    {
-        ins_stats.reject_count++;
-    }
+    publish_snapshot(&last_sample, true, false, update_result == ERR_OK, frame_begin_cycles);
 }
 /* 任务名 ins_task：事件驱动，高优先级，大栈（滤波算法的局部矩阵较多）。
- * OS_QUEUE_LEN_16：1 kHz 下约 16 ms 缓冲。OS_TIMEOUT_100MS：这么久没有新帧就重新拉起采集 */
+ * OS_QUEUE_LEN_16：2 kHz 下约 8 ms 缓冲。OS_TIMEOUT_100MS：这么久没有新帧就重新拉起采集 */
 EVENT_TASK_DEFINE(ins_task, OS_PRIORITY_HIGH, OS_STACK_LARGE, EVENT_QUEUE, sizeof(bmi088_frame_t), OS_QUEUE_LEN_16, OS_TIMEOUT_100MS, ins_run, NULL);
 
 /* 在 DRDY / DMA 完成中断里调用 */
@@ -270,11 +404,24 @@ static int shell_ins_info(int argc, char *argv[])
     print_milli("pitch", attitude.pitch_rad * RAD_TO_DEG, "deg");
     print_milli("yaw", attitude.yaw_rad * RAD_TO_DEG, "deg");
     print_milli("yaw_total", attitude.yaw_total_rad * RAD_TO_DEG, "deg");
-    print_milli("temperature", attitude.temperature_c, "C");
+    if (attitude.temperature_valid)
+    {
+        print_milli("temperature", attitude.temperature_c, "C");
+    }
+    else
+    {
+        shell_out("  temperature = unavailable\r\n");
+    }
     print_milli("dt", ins_stats.last_dt_s * 1000.0f, "ms");
-    shell_out("  frames=%lu gaps=%lu stale_accel=%lu rejects=%lu timeouts=%lu\r\n", (unsigned long)ins_stats.frame_count,
-              (unsigned long)ins_stats.gap_count, (unsigned long)ins_stats.stale_accel_count,
-              (unsigned long)ins_stats.reject_count, (unsigned long)ins_stats.timeout_count);
+    shell_out("  ins_cost_time=%lu us (task snapshot -> output)\r\n", (unsigned long)attitude.ins_cost_time);
+    shell_out("  imu_frames=%lu frames=%lu temp_wait=%lu gate_resets=%lu gaps=%lu\r\n",
+              (unsigned long)attitude.imu_frame_count, (unsigned long)ins_stats.frame_count,
+              (unsigned long)ins_stats.temperature_wait_count, (unsigned long)ins_stats.temperature_gate_reset_count,
+              (unsigned long)ins_stats.gap_count);
+    shell_out("  stale_accel=%lu rejects=%lu gyro_only_rejects=%lu timeouts=%lu\r\n",
+              (unsigned long)ins_stats.stale_accel_count,
+              (unsigned long)ins_stats.reject_count, (unsigned long)ins_stats.gyro_only_reject_count,
+              (unsigned long)ins_stats.timeout_count);
     shell_out("  driver: gyro=%lu accel=%lu temp=%lu overrun(g/a)=%lu/%lu spi_err=%lu start_err=%lu recover=%lu\r\n",
               (unsigned long)driver_stats.gyro_count, (unsigned long)driver_stats.accel_count,
               (unsigned long)driver_stats.temperature_count, (unsigned long)driver_stats.gyro_overrun,
@@ -390,15 +537,26 @@ SHELL_CMD(ins_cali, shell_ins_cali, calibrate_gyro_offset_and_print_table)
 
 static int shell_ins_imu(int argc, char *argv[])
 {
+    ins_attitude_t attitude;
+
     (void)argc;
     (void)argv;
-    shell_out("imu present=%d\r\n", (int)bmi088_present());
-    print_milli("gyro_x", last_sample.gyro_rad_s[0], "rad/s");
-    print_milli("gyro_y", last_sample.gyro_rad_s[1], "rad/s");
-    print_milli("gyro_z", last_sample.gyro_rad_s[2], "rad/s");
-    print_milli("accel_x", last_sample.accel_m_s2[0], "m/s2");
-    print_milli("accel_y", last_sample.accel_m_s2[1], "m/s2");
-    print_milli("accel_z", last_sample.accel_m_s2[2], "m/s2");
+    ins_get_attitude(&attitude);
+    shell_out("imu present=%d frames=%lu\r\n", (int)bmi088_present(), (unsigned long)attitude.imu_frame_count);
+    print_milli("gyro_x", attitude.gyro_rad_s[0], "rad/s");
+    print_milli("gyro_y", attitude.gyro_rad_s[1], "rad/s");
+    print_milli("gyro_z", attitude.gyro_rad_s[2], "rad/s");
+    print_milli("accel_x", attitude.accel_m_s2[0], "m/s2");
+    print_milli("accel_y", attitude.accel_m_s2[1], "m/s2");
+    print_milli("accel_z", attitude.accel_m_s2[2], "m/s2");
+    if (attitude.temperature_valid)
+    {
+        print_milli("temperature", attitude.temperature_c, "C");
+    }
+    else
+    {
+        shell_out("  temperature = unavailable\r\n");
+    }
     return 0;
 }
 SHELL_CMD(ins_imu, shell_ins_imu, show_latest_calibrated_imu_sample)
