@@ -63,6 +63,8 @@ extern MadgwickAHRSState_t MadgwickState;
 
 void MadgwickAHRSinit(const float quaternion[4]);
 void MadgwickAHRSreset(void);
+/* 缺测后清除静止证据和加速度历史，保留姿态与已学习零偏。 */
+void MadgwickAHRSbreakContinuity(void);
 void MadgwickAHRSsetSettings(const MadgwickAHRSSettings_t *settings);
 void MadgwickAHRSgetQuaternion(float quaternion[4]);
 void MadgwickAHRSgetEuler(float *yaw, float *pitch, float *roll);

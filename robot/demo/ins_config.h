@@ -4,7 +4,11 @@
 
 /* 本兵种惯导。算法、标定、加热都在这里，改完重新编译烧录。
  * 算法对应的 CONFIG_COMPONENT_AHRS_* 要在 robot.config 里打开，否则 ahrs_start 返回 ERR_NODEV。 */
-#define INS_ALGORITHM                       AHRS_ALGORITHM_VQF
+#define INS_ALGORITHM                       AHRS_ALGORITHM_MEKF
+
+/* 当前固定板静止测试：允许 MEKF / Mahony 在持续时间、角速度及加速度门控通过后学习零偏。
+ * 运动使用前设为 0；小于门限的慢转无法仅靠 IMU 与零偏区分。 */
+#define INS_ASSUME_STATIONARY               1U
 
 /* 标定表，一行一个轴（X、Y、Z 顺序），列含义：
  *   加速度计 scale（无量纲） | 加速度计 offset（m/s²） | 陀螺仪 offset（rad/s）

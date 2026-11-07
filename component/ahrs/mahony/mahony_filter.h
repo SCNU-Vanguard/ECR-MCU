@@ -13,6 +13,7 @@
 #define __MAHONY_FILTER_H__
 
 #include <stdint.h>
+#include <stdbool.h>
 
 /*-----------------------MahonyAHRS滤波器----------------------*/
 /*-----------------------------------------------------------*/
@@ -32,13 +33,16 @@ typedef struct MAHONY_FILTER_t
 {
   // 输入参数
   float Kp, Ki;         // 比例和积分增益
-  float dt;             // 固定采样间隔，秒，须大于 0
+  float dt;             // 本拍采样间隔，秒，须大于 0
   axis_3f_t gyro, acc;	// 陀螺仪和加速度计数据
 
   // 过程参数
   float ex_intergral, ey_intergral, ez_intergral;    // 积分误差累计
   float q0, q1, q2, q3;		// 四元数
   float rotation_matrix[3][3];  // 旋转矩阵
+  float stationary_elapsed;    // 外部确认静止且通过输入门限的连续时间
+  uint32_t zero_rate_count;    // 静止零角速反馈更新次数
+  bool zero_rate_active;
 
   // 输出参数
   float pitch, roll, yaw;       // 俯仰、横滚、偏航角，rad
@@ -58,9 +62,13 @@ typedef struct MAHONY_FILTER_t
 
 /* 实例须先整体清零再 Init，并调用 RotationMatrix_Update 建立初始旋转矩阵。
  * 每拍 Input -> Update -> Output；所有接口要求非空实例，由同一任务串行调用。
- * gyro 为 rad/s；acc 单位可为 g 或 m/s²，但必须有限且模长非零。
+ * gyro 为 rad/s，必须有限；acc 单位可为 g 或 m/s²。
+ * 零或非有限加速度跳过重力校正和积分项学习，继续陀螺传播。
  * Update 会原地归一化 acc、补偿 gyro，下一拍必须重新输入原始测量。
  * 纯六轴融合不提供绝对航向约束；异常样本由调用者过滤。 */
+/* 调用方确认静止并通过角速/加速度门限后，每拍在 Update 前调用；
+ * 连续 0.5 s 后以 10 s 时间常数学习。运动或缺测时传 false，打断学习并保留反馈。 */
+void Mahony_Filter_ObserveZeroRate(mahony_filter_t *filter, axis_3f_t gyro, bool stationary, float dt);
 void Mahony_Filter_Init(mahony_filter_t *mahony_filter, float Kp, float Ki, float dt); // 初始化函数
 void Mahony_Filter_Input(mahony_filter_t *mahony_filter, axis_3f_t gyro, axis_3f_t acc); // 输入数据函数
 void Mahony_Filter_Update(mahony_filter_t *mahony_filter);                   // 更新滤波器函数

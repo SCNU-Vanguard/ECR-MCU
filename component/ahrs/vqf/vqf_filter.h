@@ -14,7 +14,7 @@
 /* 用户提供的六轴 C 移植，源于 Daniel Laidig 的 MIT VQF，见 README 和许可证。
  * 输入：rad/s、m/s²、秒；q 为 Hamilton wxyz，表示机体系到导航系。
  * bias 单位 rad/s；Sigma/Clip/ThGyr 参数沿用上游的 °/s 单位。
- * Euler 输出为度；INS 适配沿用 X=Pitch 的历史轴命名。
+ * 输出四元数；欧拉角及累计 yaw 由 AHRS 统一转换，角度单位为弧度。
  * 本文件同时提供滤波状态和框架安全入口，使用方统一包含 vqf_filter.h。 */
 
 typedef float vqf_real_t;
@@ -51,11 +51,9 @@ struct VQF_FILTER_t {
     vqf_real_t biasMotionW;             // 水平运动观测权重，与 biasP0 同尺度
     vqf_real_t biasVerticalW;           // 竖直弱先验权重，较大值表示弱约束
     vqf_real_t biasRestW;               // 静止观测权重，与 biasP0 同尺度
-    // 陀螺/加速度静止检测各自的二阶低通系数。
-    vqf_double_t restGyrLpB[3];
-    vqf_double_t restGyrLpA[2];
-    vqf_double_t restAccLpB[3];
-    vqf_double_t restAccLpA[2];
+    // 同步输入共用静止检测系数；陀螺/加速度的递归历史仍各自保存。
+    vqf_double_t restLpB[3];
+    vqf_double_t restLpA[2];
 
     /* ================= 递归状态 ================= */
     vqf_real_t gyrQuat[4];              // 机体→陀螺积分中间系，[w,x,y,z]
@@ -63,7 +61,6 @@ struct VQF_FILTER_t {
     bool restDetected;                 // 自动判定结果；不是外部确认的真实静止
     vqf_real_t lastAccLp[3];            // 中间系中的低通加速度，m/s²
     vqf_double_t accLpState[6];         // 三通道二阶状态；NAN 标记启动均值阶段
-    vqf_real_t lastAccCorrAngularRate;  // 本拍倾斜校正角/dt，rad/s
     vqf_real_t bias[3];                 // 机体系在线剩余偏置，rad/s；不含驱动固定偏置
     vqf_real_t biasP[9];                // 三轴偏置协方差，行优先，沿用 biasP0 尺度
     vqf_double_t motionBiasEstRLpState[18]; // 旋转矩阵九通道低通状态
@@ -79,19 +76,7 @@ struct VQF_FILTER_t {
 
     /* ================= 输出 ================= */
     float q[4];                        // 机体→导航，Hamilton [w,x,y,z]
-    float pitch, roll, yaw;            // 度；此层 pitch=Y、roll=X，与历史 INS 命名不同
-    float yaw_laps;                    // 跨越 ±180° 的累计圈数
-    float last_yaw, YawTotalAngle;     // 上次包角 yaw 与连续累计 yaw，度
-    float rMat[3][3];                  // 机体→导航的旋转矩阵
 };
-
-/* 底层接口不做完整输入检查；应用层优先使用下方大写 VQF_* 入口。
- * vqf_update 推进递归状态，vqf_output 才刷新 q/矩阵/欧拉角。 */
-void vqf_init(struct VQF_FILTER_t *f, float dt);
-void vqf_set_timestep(struct VQF_FILTER_t *f, float dt);
-void vqf_break_continuity(struct VQF_FILTER_t *f);
-void vqf_update(struct VQF_FILTER_t *f, float gx, float gy, float gz, float ax, float ay, float az);
-void vqf_output(struct VQF_FILTER_t *f);
 
 /* ---------- 带输入保护和诊断计数的框架接口 ---------- */
 /* 输入饱和标志与 BMI088 / MEKF 一致。 */

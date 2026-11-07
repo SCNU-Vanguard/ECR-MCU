@@ -52,35 +52,58 @@ void Mahony_Filter_Input(mahony_filter_t *mahony_filter, axis_3f_t gyro, axis_3f
   mahony_filter->acc = acc;
 }
 
+/* 明确静止时直接观测 gyro + integral = 0，补足重力无法观测的航向零偏。
+ * 每个有效样本都参与一阶低通，避免抽取单帧造成混叠；时间常数 10 s。 */
+void Mahony_Filter_ObserveZeroRate(mahony_filter_t *f, axis_3f_t gyro, bool stationary, float dt)
+{
+  f->zero_rate_active = false;
+  if (!stationary || !isfinite(dt) || dt <= 0.0f || dt > 0.02f ||
+      !isfinite(gyro.x) || !isfinite(gyro.y) || !isfinite(gyro.z))
+  {
+    f->stationary_elapsed = 0.0f;
+    return;
+  }
+  f->stationary_elapsed = fminf(f->stationary_elapsed + dt, 0.5f);
+  if (f->stationary_elapsed < 0.5f) return;
+  const float alpha = dt / (10.0f + dt);
+  f->ex_intergral += alpha * (-gyro.x - f->ex_intergral);
+  f->ey_intergral += alpha * (-gyro.y - f->ey_intergral);
+  f->ez_intergral += alpha * (-gyro.z - f->ez_intergral);
+  f->zero_rate_active = true;
+  f->zero_rate_count++;
+}
+
 // 使用Mahony算法更新滤波器状态
 void Mahony_Filter_Update(mahony_filter_t *mahony_filter)
 {
   float normalise;
   float ex, ey, ez;
 
-  /*角速度，度转弧度*/
-//    mahony_filter->gyro.x *= DEG2RAD;        /* 度转弧度 */
-//    mahony_filter->gyro.y *= DEG2RAD;
-//    mahony_filter->gyro.z *= DEG2RAD;;
-  /*单位化加速计测量值*/
-  normalise = sqrt(mahony_filter->acc.x * mahony_filter->acc.x + mahony_filter->acc.y * mahony_filter->acc.y + mahony_filter->acc.z * mahony_filter->acc.z);
+  /* 无可信加速度时只传播，保留已学习的积分反馈，不更新积分项。 */
+  ex = ey = ez = 0.0f;
+  normalise = sqrtf(mahony_filter->acc.x * mahony_filter->acc.x +
+                    mahony_filter->acc.y * mahony_filter->acc.y +
+                    mahony_filter->acc.z * mahony_filter->acc.z);
+  if (isfinite(normalise) && normalise > 1.0e-6f)
+  {
+    mahony_filter->acc.x /= normalise;
+    mahony_filter->acc.y /= normalise;
+    mahony_filter->acc.z /= normalise;
 
-  mahony_filter->acc.x = mahony_filter->acc.x / normalise;
-  mahony_filter->acc.y = mahony_filter->acc.y / normalise;
-  mahony_filter->acc.z = mahony_filter->acc.z / normalise;
+    ex = mahony_filter->acc.y * mahony_filter->rotation_matrix[2][2] -
+         mahony_filter->acc.z * mahony_filter->rotation_matrix[2][1];
+    ey = mahony_filter->acc.z * mahony_filter->rotation_matrix[2][0] -
+         mahony_filter->acc.x * mahony_filter->rotation_matrix[2][2];
+    ez = mahony_filter->acc.x * mahony_filter->rotation_matrix[2][1] -
+         mahony_filter->acc.y * mahony_filter->rotation_matrix[2][0];
 
-  /*加速计读取的方向与重力加速计方向的差值，用向量叉乘计算*/
-  //vx=mahony_filter->rotation_matrix[2][0]=2.0f * (q1q3 + -q0q2)
-  //vy=mahony_filter->rotation_matrix[2][1]=2.0f * (q2q3 - -q0q1)
-  //vz=mahony_filter->rotation_matrix[2][2]=1.0f - 2.0f * q1q1 - 2.0f * q2q2
-  ex = (mahony_filter->acc.y * mahony_filter->rotation_matrix[2][2] - mahony_filter->acc.z * mahony_filter->rotation_matrix[2][1]);
-  ey = (mahony_filter->acc.z * mahony_filter->rotation_matrix[2][0] - mahony_filter->acc.x * mahony_filter->rotation_matrix[2][2]);
-  ez = (mahony_filter->acc.x * mahony_filter->rotation_matrix[2][1] - mahony_filter->acc.y * mahony_filter->rotation_matrix[2][0]);
-
-  /*误差累计，与积分常数相乘*/
-  mahony_filter->ex_intergral += mahony_filter->Ki * ex * mahony_filter->dt;
-  mahony_filter->ey_intergral += mahony_filter->Ki * ey * mahony_filter->dt;
-  mahony_filter->ez_intergral += mahony_filter->Ki * ez * mahony_filter->dt;
+    if (!mahony_filter->zero_rate_active)
+    {
+      mahony_filter->ex_intergral += mahony_filter->Ki * ex * mahony_filter->dt;
+      mahony_filter->ey_intergral += mahony_filter->Ki * ey * mahony_filter->dt;
+      mahony_filter->ez_intergral += mahony_filter->Ki * ez * mahony_filter->dt;
+    }
+  }
 
   /*用叉积误差来做PI修正陀螺零偏，即抵消陀螺读数中的偏移量*/
   mahony_filter->gyro.x += mahony_filter->Kp * ex + mahony_filter->ex_intergral;
@@ -99,7 +122,7 @@ void Mahony_Filter_Update(mahony_filter_t *mahony_filter)
   mahony_filter->q3 += (q0Last * mahony_filter->gyro.z + q1Last * mahony_filter->gyro.y - q2Last * mahony_filter->gyro.x) * halfT;
 
   /*单位化四元数*/
-  normalise = sqrt(mahony_filter->q0 * mahony_filter->q0 + mahony_filter->q1 * mahony_filter->q1 + mahony_filter->q2 * mahony_filter->q2 + mahony_filter->q3 * mahony_filter->q3);
+  normalise = sqrtf(mahony_filter->q0 * mahony_filter->q0 + mahony_filter->q1 * mahony_filter->q1 + mahony_filter->q2 * mahony_filter->q2 + mahony_filter->q3 * mahony_filter->q3);
 
   mahony_filter->q0 = mahony_filter->q0 / normalise;
   mahony_filter->q1 = mahony_filter->q1 / normalise;

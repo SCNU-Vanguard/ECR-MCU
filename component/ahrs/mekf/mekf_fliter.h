@@ -3,8 +3,7 @@
 
 #include <stdint.h>
 
-/* 可选的 float 缓冲区操作。平台提供 CMSIS-DSP 头文件和库时才开启；
- * 独立算法默认使用通用 C99 实现。 */
+/* 可选的 CMSIS-DSP 缓冲区操作。 */
 #ifndef MEKF_USE_CMSIS_DSP
 #define MEKF_USE_CMSIS_DSP 0
 #endif
@@ -13,23 +12,20 @@
 extern "C" {
 #endif
 
-/* 使用入口（先读这里，再看 .c 顶部的算法流程与调参顺序）：
+/* 使用入口：
  *   MEKF_Init(&filter, q0, NULL, NULL);
  *   MEKF_Update(&filter, gyro_rad_s, accel_m_s2, dt_seconds, flags);
- *   输出 filter.q / filter.bias；状态、拒绝计数、NIS 用于解释波形。
- *   gyro/accel 必须来自同一机体坐标系；驱动减过固定零偏后，bias 只代表
- *   剩余零偏，不得在外部先减 filter.bias 再把结果送进来，否则会扣两次。
+ * 输入必须使用同一机体系和规定单位。驱动固定标定后的零偏由外部扣除，
+ * filter.bias 只表示剩余零偏，不能重复扣除。
  *
- * Hamilton [w,x,y,z], body -> navigation; stationary specific force is +Z.
- * Left/global error: q_true = Exp(delta_theta_nav) * q.
- * Nominal state (q,bias_body), covariance ordering (delta_theta_nav, delta_bias_body).
- * Gravity correction constrains both navigation-Z attitude increments and
- * body-gravity bias increments; it does not create a heading measurement.
- * No HAL, heap or global state. Optional CMSIS-DSP buffer backend above.
- * One owner per instance. */
+ * 四元数为 Hamilton [w,x,y,z]，表示机体系到固定参考坐标系的旋转。
+ * 固定参考坐标系表示上电初始化时的板子坐标系；实现上由首帧有效加速度建立，
+ * yaw 初值为 0，随后随陀螺积分变化；
+ * 静止比力在该坐标系中约定为 +Z。
+ * 名义状态为 (q, bias)，协方差顺序为 (姿态误差、零偏误差)。
+ * 加速度只约束倾斜，不提供绝对航向。 */
 typedef struct {
-    /* 下面 noise 字段都填标准差/噪声密度，内部才平方生成 Q/R。
-     * 不兼容旧 QuaternionEKF 的 Q1=10.5、R=1e6 等经验参数。 */
+    /* 噪声字段填写标准差或噪声密度，内部平方后生成 Q/R。 */
     float gyro_noise;          /* 陀螺连续白噪声密度，rad/sqrt(s)，内部平方 */
     float bias_walk;           /* 零偏随机游走密度，(rad/s)/sqrt(s)，内部平方 */
     float accel_noise;         /* 单位加速度方向标准差，无量纲，内部平方为 R */
@@ -51,8 +47,7 @@ typedef struct {
 enum {
     MEKF_GYRO_CLIPPED = 1U,
     MEKF_ACCEL_CLIPPED = 2U,
-    /* 调用方明确声明零角速度，例如板子确实固定静止。
-     * 不能只凭陀螺模长小就设置：真实慢速 yaw 转动不能当成零偏。 */
+    /* 调用的时候使用门限确认静止后才能设置；不能仅凭陀螺模长判定。 */
     MEKF_STATIONARY = 4U
 };
 enum {
@@ -69,10 +64,12 @@ typedef struct {
     float bias[3];
     float P[36];               /* 按行存储的 6×6 协方差矩阵 */
     MEKF_Config config;
-    float accel_nis;           /* 归一化创新平方；未进行创新检验时为 -1 */
+    float accel_nis;           /* 归一化平方；未进行检验时为 -1 */
     float accel_norm;
     float stationary_elapsed;
     float zero_rate_elapsed;
+    float zero_rate_integral[3]; /* 静止窗口内 gyro * dt，避免降采样混叠为零偏 */
+    float tilt_recovery_elapsed;
     uint32_t predict_count;
     uint32_t accel_accept_count;
     uint32_t accel_reject_count;
@@ -86,23 +83,18 @@ typedef struct {
 } MEKF_State;
 
 MEKF_Config MEKF_DefaultConfig(void);
-/* q/bias 为 NULL 时使用单位四元数/零偏零值，config 为 NULL 时使用默认参数。
- * 配置或初值非法返回 0，初始化失败后实例保持禁用。 */
+/* q、bias 或 config 为 NULL 时使用默认初值；非法参数返回 0。 */
 uint8_t MEKF_Init(MEKF_State *state, const float q[4], const float bias[3],
                   const MEKF_Config *config);
-/* gyro 单位 rad/s，accel 单位 m/s^2，dt 单位秒。
- * 陀螺或 dt 非法时整拍跳过；加速度非法时只跳过校正，仍进行陀螺预测。 */
+/* gyro 为 rad/s，accel 为 m/s^2，dt 为秒。
+ * 陀螺或 dt 无效时跳过整拍；加速度无效时仍保留陀螺预测。 */
 uint8_t MEKF_Update(MEKF_State *state, const float gyro[3], const float accel[3],
                     float dt, uint8_t flags);
-/* 可选：独立的导航系 yaw 观测，rad / rad^2；返回 1 表示接受。
- * 固定底座编码器必须先校准安装外参、轴方向、零位和时钟。它不是泛用
- * “电机角=IMU yaw”接口：任意关节角必须先经过运动学转换。
- * 调用方负责新鲜度/仅消费一次/时间对齐；不要把延迟角度直接融合到当前时刻。
- * 初始 yaw 应先对齐到参考附近；此接口为局部 EKF 校正，不用于大角度重置。
- * 不默认接入任何外设；使用它的结果不能再用同一编码器作独立精度真值。 */
+/* 缺测时清除连续静止证据及未完成的零角速观测窗口，保留姿态/零偏。 */
+void MEKF_BreakContinuity(MEKF_State *state);
+/* 自己配置的固定参考坐标系 yaw 观测，单位为 rad/rad^2；返回 1 表示接受。 */
 uint8_t MEKF_FuseHeading(MEKF_State *state, float yaw_rad, float variance_rad2);
-/* 标准 ZYX 欧拉角，单位弧度：roll=X、pitch=Y、yaw=Z。
- * 旧 INS 接口的 roll/pitch 命名相反，在接口边界适配。 */
+/* 输出 ZYX 欧拉角，单位为弧度。 */
 void MEKF_GetEuler(const MEKF_State *state, float *roll, float *pitch, float *yaw);
 
 #ifdef __cplusplus
