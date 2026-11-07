@@ -28,14 +28,15 @@ static void tx_kick(void)                   /* 调用时已屏蔽中断，或在
     {
         return;
     }
-    uint32_t chunk_length = cqueue_out(&tx_queue, tx_chunk, TX_CHUNK);
+    uint32_t chunk_length = cqueue_peek(&tx_queue, tx_chunk, TX_CHUNK);
 
     if (chunk_length == 0u)
     {
         return;
     }
-    if (CDC_Transmit_HS(tx_chunk, (uint16_t)chunk_length) == USBD_OK)    /* 失败：这一块丢弃 */
+    if (CDC_Transmit_HS(tx_chunk, (uint16_t)chunk_length) == USBD_OK)
     {
+        cqueue_drop(&tx_queue, chunk_length);
         tx_busy = 1u;
     }
 }
