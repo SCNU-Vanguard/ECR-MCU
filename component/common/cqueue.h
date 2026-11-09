@@ -14,6 +14,8 @@ struct __cqueue
 int32_t  cqueue_init(struct __cqueue *queue, void *buffer, uint32_t size, uint32_t element_size);
 uint32_t cqueue_in(struct __cqueue *queue, const void *buffer, uint32_t length);    /* 返回实际入队个数 */
 uint32_t cqueue_out(struct __cqueue *queue, void *buffer, uint32_t length);         /* 返回实际出队个数 */
+uint32_t cqueue_peek(const struct __cqueue *queue, void *buffer, uint32_t length);  /* 只复制，不出队 */
+void     cqueue_drop(struct __cqueue *queue, uint32_t length);                      /* 丢弃已确认消费的数据 */
 uint32_t cqueue_used(const struct __cqueue *queue);
 uint32_t cqueue_unused(const struct __cqueue *queue);
 #endif

@@ -1,4 +1,7 @@
-/* 单板：IMU 恒温。温度超过 0.5 s 不更新就关加热。 */
+/* IMU 恒温加热任务。
+ * 10 Hz 周期任务：直接读取 BMI088 最近一次有效温度（不依赖姿态解算），交给 heater 做预热 + PID 恒温。
+ * 保护：温度数据超过 HEATER_STALE_LIMIT_CYCLES 个周期没有更新（温度读取停止或 IMU 掉线）就关加热，防止在没有反馈时一直加热。
+ * shell：heater 看阶段、目标/当前温度和占空比。 */
 #include "osal/period.h"
 #include "component/common/initcall.h"
 #include "component/common/err.h"
@@ -9,7 +12,7 @@
 
 #define HEATER_STALE_LIMIT_CYCLES   5u
 
-static uint32_t last_update_count;
+static uint32_t last_temperature_sequence;
 static uint32_t stale_cycles;
 static bool heater_ready;
 
@@ -28,21 +31,20 @@ INIT_APP_STAGE2(heater_ctrl_init);
 
 static void heater_ctrl_run(void *argument)
 {
-    ins_attitude_t attitude;
-    bmi088_stats_t driver_stats;
+    float temperature_c;
+    uint32_t temperature_sequence;
 
     (void)argument;
     if (!heater_ready)
     {
         return;
     }
-    ins_get_attitude(&attitude);
-    bmi088_get_stats(&driver_stats);
-    if (attitude.valid && driver_stats.temperature_count > 0u && attitude.update_count != last_update_count)
+    if (bmi088_get_temperature(&temperature_c, &temperature_sequence) &&
+        temperature_sequence != last_temperature_sequence)
     {
-        last_update_count = attitude.update_count;
+        last_temperature_sequence = temperature_sequence;
         stale_cycles = 0u;
-        heater_step(attitude.temperature_c);
+        heater_step(temperature_c);
         return;
     }
     if (stale_cycles < HEATER_STALE_LIMIT_CYCLES)
