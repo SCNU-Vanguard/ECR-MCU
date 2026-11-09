@@ -4,11 +4,6 @@
  * 全部静态分配（对象存储在调用者手里），不使用 FreeRTOS 堆。 */
 #include "component/common/types.h"
 #include "component/common/err.h"
-/* 后端提供内联屏障接口，任务、中断及调度器启动前均可调用：
- * os_memory_barrier()：保证前后显式内存访问的顺序（DMB）。
- * os_data_sync_barrier()：等待此前显式内存访问完成（DSB）。
- * os_instruction_sync_barrier()：同步指令流，使用更新后的执行上下文（ISB）。
- * 屏障不提供互斥，也不替代原子操作或缓存维护。 */
 #include "osal/freertos/osal_port.h"
 
 #define OS_WAIT_FOREVER  0xFFFFFFFFu
@@ -105,6 +100,14 @@ typedef struct
     SemaphoreHandle_t handle;
     StaticSemaphore_t storage;
 } os_mutex_t;
+
+/* 内存屏障：任务、中断和调度器启动前均可调用，由平台后端实现。
+ * CDD / component / appl 统一使用这些接口，不直接调用平台屏障。
+ * DMB 保证显式内存访问顺序；DSB 等待此前显式内存访问完成；ISB 同步指令流。
+ * 屏障不提供互斥，也不替代原子操作或缓存维护。 */
+void os_memory_barrier(void);
+void os_data_sync_barrier(void);
+void os_instruction_sync_barrier(void);
 
 bool    os_in_isr(void);
 /* CPU 占用统计：在空闲钩子里调用。统计原理见 osal/freertos/cpu_usage.c；CONFIG_OSAL_CPU_USAGE 没开时是空操作 */
