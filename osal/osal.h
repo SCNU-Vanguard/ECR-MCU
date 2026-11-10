@@ -101,14 +101,6 @@ typedef struct
     StaticSemaphore_t storage;
 } os_mutex_t;
 
-/* 内存屏障：任务、中断和调度器启动前均可调用，由平台后端实现。
- * CDD / component / appl 统一使用这些接口，不直接调用平台屏障。
- * DMB 保证显式内存访问顺序；DSB 等待此前显式内存访问完成；ISB 同步指令流。
- * 屏障不提供互斥，也不替代原子操作或缓存维护。 */
-void os_memory_barrier(void);
-void os_data_sync_barrier(void);
-void os_instruction_sync_barrier(void);
-
 bool    os_in_isr(void);
 /* CPU 占用统计：在空闲钩子里调用。统计原理见 osal/freertos/cpu_usage.c；CONFIG_OSAL_CPU_USAGE 没开时是空操作 */
 #ifdef CONFIG_OSAL_CPU_USAGE

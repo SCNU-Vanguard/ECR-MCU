@@ -1,5 +1,5 @@
 #include <string.h>
-#include "osal/osal.h"
+#include "component/common/types.h"
 #include "stm32h7xx.h"
 
 /* 进 main 之前做两件事（constructor 优先级 101，是用户构造函数里最先跑的）：
@@ -43,13 +43,13 @@ static void memory_init(void) __attribute__((constructor(101)));
 static void memory_init(void)
 {
     SCB->VTOR = (uint32_t)g_pfnVectors;
-    os_data_sync_barrier();
-    os_instruction_sync_barrier();
+    DSB();
+    ISB();
 
     itcm_clear((uint32_t)_itcm_start, (uint32_t)_itcm_end);
     memcpy(_sramfunc, _siramfunc, (size_t)(_eramfunc - _sramfunc));
-    os_data_sync_barrier();
-    os_instruction_sync_barrier();
+    DSB();
+    ISB();
 
     memcpy(_ssram_cacheable, _sisram_cacheable, (size_t)(_esram_cacheable - _ssram_cacheable));
     memset(_ssram_noncacheable, 0, (size_t)(_esram_noncacheable - _ssram_noncacheable));

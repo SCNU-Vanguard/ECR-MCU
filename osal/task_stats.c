@@ -1,25 +1,16 @@
 #include "osal/task_stats.h"
 
 #ifdef CONFIG_OSAL_TASK_STATS
-#include "osal/osal.h"
-#include CMSIS_device_header            /* DWT、CoreDebug、SystemCoreClock */
-
-void task_stats_hw_init(void)
-{
-    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;   /* 打开 DWT/ITM 的时钟 */
-    DWT->LAR = 0xC5ACCE55u;                           /* Cortex-M7：先解锁才能写 DWT 寄存器 */
-    DWT->CYCCNT = 0u;
-    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
-}
+#include "bsp/tick/bsp_tick.h"
 
 uint32_t task_stats_now(void)
 {
-    return DWT->CYCCNT;
+    return bsp_cycle_count();
 }
 
 uint32_t task_stats_cycles_per_us(void)
 {
-    return SystemCoreClock / 1000000u;
+    return bsp_cycle_freq_hz() / 1000000u;
 }
 
 void task_stats_reset(struct task_stats *stats)
@@ -38,7 +29,7 @@ void task_stats_reset(struct task_stats *stats)
 
 uint32_t task_stats_begin(struct task_stats *stats, uint32_t stamp)
 {
-    uint32_t now = DWT->CYCCNT;
+    uint32_t now = bsp_cycle_count();
     uint32_t latency = now - stamp;                   /* 无符号减法：计数器回绕也正确 */
 
     stats->latency_sum += latency;
@@ -66,7 +57,7 @@ uint32_t task_stats_begin(struct task_stats *stats, uint32_t stamp)
 
 void task_stats_end(struct task_stats *stats, uint32_t start_cycles)
 {
-    uint32_t exec_cycles = DWT->CYCCNT - start_cycles;
+    uint32_t exec_cycles = bsp_cycle_count() - start_cycles;
 
     stats->exec_last = exec_cycles;
     if (exec_cycles < stats->exec_min)
