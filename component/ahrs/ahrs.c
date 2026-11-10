@@ -14,7 +14,7 @@
 #define AHRS_INIT_ACCEL_MIN_M_S2    7.0f
 #define AHRS_INIT_ACCEL_MAX_M_S2    12.6f
 
-/* Mahony 增益：比例项越大越信加速度计，积分项用来消陀螺零偏。起步值，未针对本机调过 */
+/* Mahony 增益：比例项越大越信加速度计，积分项用来消陀螺零偏 */
 #define AHRS_MAHONY_KP              1.0f
 #define AHRS_MAHONY_KI              0.002f
 
@@ -132,14 +132,14 @@ static int32_t algorithm_initialize(ahrs_t *ahrs, const float initial_quaternion
     }
 }
 
-static void publish_quaternion(ahrs_t *ahrs, const float quaternion[4])
+static bool publish_quaternion(ahrs_t *ahrs, const float quaternion[4])
 {
     float norm = sqrtf(quaternion[0] * quaternion[0] + quaternion[1] * quaternion[1] +
                        quaternion[2] * quaternion[2] + quaternion[3] * quaternion[3]);
 
     if (!(norm > 0.5f && norm < 2.0f))
     {
-        return;
+        return false;
     }
     for (int component_index = 0; component_index < 4; component_index++)
     {
@@ -171,7 +171,7 @@ static void publish_quaternion(ahrs_t *ahrs, const float quaternion[4])
     if (ahrs->update_count == 0u)
     {
         ahrs->yaw_total_rad = ahrs->yaw_rad;
-        return;
+        return true;
     }
     if (yaw_step > AHRS_PI)
     {
@@ -182,6 +182,7 @@ static void publish_quaternion(ahrs_t *ahrs, const float quaternion[4])
         yaw_step += AHRS_TWO_PI;
     }
     ahrs->yaw_total_rad += yaw_step;
+    return true;
 }
 
 int32_t ahrs_update(ahrs_t *ahrs, const ahrs_sample_t *sample)
@@ -190,9 +191,12 @@ int32_t ahrs_update(ahrs_t *ahrs, const ahrs_sample_t *sample)
     {
         return ERR_INVAL;
     }
-    if (!(sample->dt_s >= AHRS_DT_MIN_S && sample->dt_s <= AHRS_DT_MAX_S))
+    if (!(sample->dt_s >= AHRS_DT_MIN_S && sample->dt_s <= AHRS_DT_MAX_S) ||
+        sample->gyro_clipped || !isfinite(sample->gyro_rad_s[0]) ||
+        !isfinite(sample->gyro_rad_s[1]) || !isfinite(sample->gyro_rad_s[2]))
     {
         ahrs->reject_count++;
+        ahrs_break_continuity(ahrs);
         return ERR_INVAL;
     }
 
@@ -200,7 +204,7 @@ int32_t ahrs_update(ahrs_t *ahrs, const ahrs_sample_t *sample)
     {
         float initial_quaternion[4];
 
-        if (!initial_quaternion_from_accel(sample->accel_m_s2, initial_quaternion))
+        if (sample->accel_clipped || !initial_quaternion_from_accel(sample->accel_m_s2, initial_quaternion))
         {
             return ERR_BUSY;
         }
@@ -248,10 +252,15 @@ int32_t ahrs_update(ahrs_t *ahrs, const ahrs_sample_t *sample)
 #endif
 #ifdef CONFIG_COMPONENT_AHRS_MADGWICK
     case AHRS_ALGORITHM_MADGWICK:
-        MadgwickAHRSupdateIMUDt(gyro[0], gyro[1], gyro[2], accel[0], accel[1], accel[2], dt);
+    {
+        const uint32_t previous_count = MadgwickState.update_count;
+        /* 非有限加速度走纯陀螺路径，不能将饱和/过期样本用于静止学习。 */
+        const float ax = sample->accel_clipped ? NAN : accel[0];
+        MadgwickAHRSupdateIMUDt(gyro[0], gyro[1], gyro[2], ax, accel[1], accel[2], dt);
         MadgwickAHRSgetQuaternion(quaternion);
-        predicted = true;
+        predicted = MadgwickState.update_count != previous_count;
         break;
+    }
 #endif
 #ifdef CONFIG_COMPONENT_AHRS_MAHONY
     case AHRS_ALGORITHM_MAHONY:
@@ -259,6 +268,17 @@ int32_t ahrs_update(ahrs_t *ahrs, const ahrs_sample_t *sample)
         axis_3f_t gyro_axes = { gyro[0], gyro[1], gyro[2] };
         axis_3f_t accel_axes = { accel[0], accel[1], accel[2] };
 
+        if (sample->accel_clipped)
+        {
+            accel_axes = (axis_3f_t){ 0.0f, 0.0f, 0.0f };
+        }
+
+        const float accel_norm = sqrtf(accel[0]*accel[0] + accel[1]*accel[1] + accel[2]*accel[2]);
+        const float gyro_norm2 = gyro[0]*gyro[0] + gyro[1]*gyro[1] + gyro[2]*gyro[2];
+        const bool stationary = sample->stationary && !sample->accel_clipped &&
+                                isfinite(accel_norm) && fabsf(accel_norm - 9.81f) < 0.2f &&
+                                gyro_norm2 < 0.05f*0.05f;
+        Mahony_Filter_ObserveZeroRate(&ahrs->state.mahony, gyro_axes, stationary, dt);
         ahrs->state.mahony.dt = dt;
         Mahony_Filter_Input(&ahrs->state.mahony, gyro_axes, accel_axes);
         Mahony_Filter_Update(&ahrs->state.mahony);
@@ -287,7 +307,12 @@ int32_t ahrs_update(ahrs_t *ahrs, const ahrs_sample_t *sample)
             return ERR_FAIL;
         }
     }
-    publish_quaternion(ahrs, quaternion);
+    if (!publish_quaternion(ahrs, quaternion))
+    {
+        ahrs->reject_count++;
+        ahrs_break_continuity(ahrs);
+        return ERR_FAIL;
+    }
     ahrs->update_count++;
     return ERR_OK;
 }
@@ -298,6 +323,25 @@ void ahrs_break_continuity(ahrs_t *ahrs)
     {
         return;
     }
+#ifdef CONFIG_COMPONENT_AHRS_MAHONY
+    if (ahrs->algorithm == AHRS_ALGORITHM_MAHONY)
+    {
+        ahrs->state.mahony.stationary_elapsed = 0.0f;
+        ahrs->state.mahony.zero_rate_active = false;
+    }
+#endif
+#ifdef CONFIG_COMPONENT_AHRS_MADGWICK
+    if (ahrs->algorithm == AHRS_ALGORITHM_MADGWICK)
+    {
+        MadgwickAHRSbreakContinuity();
+    }
+#endif
+#ifdef CONFIG_COMPONENT_AHRS_MEKF
+    if (ahrs->algorithm == AHRS_ALGORITHM_MEKF)
+    {
+        MEKF_BreakContinuity(&ahrs->state.mekf);
+    }
+#endif
 #ifdef CONFIG_COMPONENT_AHRS_VQF
     if (ahrs->algorithm == AHRS_ALGORITHM_VQF)
     {

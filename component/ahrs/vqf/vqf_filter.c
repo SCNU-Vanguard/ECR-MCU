@@ -21,7 +21,6 @@
 #define EPS FLT_EPSILON
 #define M_PIf       3.14159265358979323846f
 #define VQF_SQRT2   1.41421356237309504880
-#define RAD2DEG     (180.0f / M_PIf)
 
 
 static float vqf_square(float x) { return x * x; }
@@ -98,7 +97,7 @@ static void adaptFilter(const float last[], size_t n, const double oldB[3],
     }
 }
 
-void vqf_set_timestep(struct VQF_FILTER_t *f, float dt)
+static void vqf_set_timestep(struct VQF_FILTER_t *f, float dt)
 {
     /* dt 取相邻有效样本的实际时间差。同一步长直接复用，变化时倾斜、
      * 运动零偏和静止检测的低通必须一起调整，不能只改陀螺积分间隔。 */
@@ -111,12 +110,10 @@ void vqf_set_timestep(struct VQF_FILTER_t *f, float dt)
     memcpy(f->accLpB, b, sizeof(b));
     memcpy(f->accLpA, a, sizeof(a));
     filterCoeffs(f->restFilterTau, dt, b, a);
-    adaptFilter(f->restLastGyrLp, 3, f->restGyrLpB, f->restGyrLpA, b, a, f->restGyrLpState);
-    adaptFilter(f->restLastAccLp, 3, f->restAccLpB, f->restAccLpA, b, a, f->restAccLpState);
-    memcpy(f->restGyrLpB, b, sizeof(b));
-    memcpy(f->restAccLpB, b, sizeof(b));
-    memcpy(f->restGyrLpA, a, sizeof(a));
-    memcpy(f->restAccLpA, a, sizeof(a));
+    adaptFilter(f->restLastGyrLp, 3, f->restLpB, f->restLpA, b, a, f->restGyrLpState);
+    adaptFilter(f->restLastAccLp, 3, f->restLpB, f->restLpA, b, a, f->restAccLpState);
+    memcpy(f->restLpB, b, sizeof(b));
+    memcpy(f->restLpA, a, sizeof(a));
     /* P、过程噪声 V 和观测权重 W 使用同一内部尺度，K 中尺度相消。
      * W 随 dt 重算，以维持指定的零偏不确定度与遗忘时间。 */
     f->gyrTs = f->accTs = dt;
@@ -128,7 +125,7 @@ void vqf_set_timestep(struct VQF_FILTER_t *f, float dt)
     f->biasRestW = vqf_square(pRest)/f->biasV + pRest;
 }
 
-void vqf_break_continuity(struct VQF_FILTER_t *f)
+static void vqf_break_continuity(struct VQF_FILTER_t *f)
 {
     /* 保留 q、bias、P；缺测只打断静止证据和低通历史，不伪造缺口内的积分。
      * NAN 是 filterVec 的重新初始化标记，并非已输出的姿态异常。 */
@@ -227,7 +224,7 @@ static bool matrix3Inv(const vqf_real_t in[9], vqf_real_t out[9]) {
 }
 
 
-void vqf_init(struct VQF_FILTER_t *f, float dt)
+static void vqf_init(struct VQF_FILTER_t *f, float dt)
 {
     memset(f, 0, sizeof(*f));
     /* 保留原移植的参数基线。角速度类参数用 °/s，运行输入/bias 用 rad/s；
@@ -243,57 +240,22 @@ void vqf_init(struct VQF_FILTER_t *f, float dt)
     f->biasSigmaRest = 0.03f;
     f->restMinT = 1.5f;
     f->restFilterTau = 0.5f;
-    f->restThGyr = 2.0f;
+    /* BMI088 2 kHz/230 Hz 带宽下，2 deg/s 会被静止噪声频繁打断；
+     * 实板采用 3 deg/s 偏差门限，低通角速度仍受 biasClip 约束。 */
+    f->restThGyr = 3.0f;
     f->restThAcc = 0.5f;
 
-    // 初始采样间隔；后续每拍由框架入口更新为实际 dt。
-    f->gyrTs = dt;
-    f->accTs = dt;
-
-    /* 协方差沿用上游尺度：(sigma[°/s] × 100)²。所有 P/V/W 同尺度，
-     * 增益为无量纲；更新残差和最终 bias 仍使用 rad/s，不在这里换算状态。 */
-    filterCoeffs(f->tauAcc, f->accTs, f->accLpB, f->accLpA);
+    f->gyrQuat[0] = f->accQuat[0] = 1.0f;
     f->biasP0 = vqf_square(f->biasSigmaInit*100.0f);
-    f->biasV = vqf_square(0.1f*100.0f) * f->accTs / f->biasForgettingTime;
-
-    vqf_real_t pMotion = vqf_square(f->biasSigmaMotion*100.0f);
-    f->biasMotionW = vqf_square(pMotion) / f->biasV + pMotion;
-    f->biasVerticalW = f->biasMotionW / vqf_max(f->biasVerticalForgettingFactor, 1e-10f);
-
-    vqf_real_t pRest = vqf_square(f->biasSigmaRest*100.0f);
-    f->biasRestW = vqf_square(pRest) / f->biasV + pRest;
-
-    filterCoeffs(f->restFilterTau, f->gyrTs, f->restGyrLpB, f->restGyrLpA);
-    filterCoeffs(f->restFilterTau, f->accTs, f->restAccLpB, f->restAccLpA);
-
-    // 重置状态
-    f->gyrQuat[0] = 1; f->gyrQuat[1] = 0; f->gyrQuat[2] = 0; f->gyrQuat[3] = 0;
-    f->accQuat[0] = 1; f->accQuat[1] = 0; f->accQuat[2] = 0; f->accQuat[3] = 0;
-    f->restDetected = false;
-    memset(f->lastAccLp, 0, sizeof(f->lastAccLp));
-    memset(f->bias, 0, sizeof(f->bias));
     matrix3SetToScaledIdentity(f->biasP0, f->biasP);
+    vqf_break_continuity(f);
+    for (size_t i = 0; i < 3; ++i) f->restLastGyrLp[i] = NAN;
+    /* 初始 dt 为 0，复用变步长入口建立全部系数；NAN 状态跳过历史变换。 */
+    vqf_set_timestep(f, dt);
 
-    for (size_t i = 0; i < 6; i++) {
-        f->accLpState[i] = NAN;
-        f->restGyrLpState[i] = NAN;
-        f->restAccLpState[i] = NAN;
-    }
-    for (size_t i = 0; i < 18; i++) f->motionBiasEstRLpState[i] = NAN;
-    for (size_t i = 0; i < 4; i++) f->motionBiasEstBiasLpState[i] = NAN;
-    for (size_t i = 0; i < 3; i++) {
-        f->restLastGyrLp[i] = NAN;
-        f->restLastAccLp[i] = 0.0f;
-    }
-    f->restLastSquaredDeviations[0] = f->restLastSquaredDeviations[1] = 0.0f;
-    f->restT = 0.0f;
-
-    f->pitch = 0; f->roll = 0; f->yaw = 0;
-    f->yaw_laps = 0; f->last_yaw = 0; f->YawTotalAngle = 0;
-    vqf_output(f);
 }
 
-void vqf_update(struct VQF_FILTER_t *f, float gx, float gy, float gz, float ax, float ay, float az)
+static void vqf_update(struct VQF_FILTER_t *f, float gx, float gy, float gz, float ax, float ay, float az)
 {
     vqf_real_t gyr[3] = {gx, gy, gz};
     vqf_real_t acc[3] = {ax, ay, az};
@@ -302,7 +264,7 @@ void vqf_update(struct VQF_FILTER_t *f, float gx, float gy, float gz, float ax, 
      * 检测量是相对低通的变化和低通幅值，小而恒定的真实慢转仍可能被误判。
      * 固定标定已由驱动扣除，这里只扣 VQF 自己估计的剩余偏置。 */
     if (f->restBiasEstEnabled) {
-        filterVec(gyr, 3, f->restFilterTau, f->gyrTs, f->restGyrLpB, f->restGyrLpA,
+        filterVec(gyr, 3, f->restFilterTau, f->gyrTs, f->restLpB, f->restLpA,
                   f->restGyrLpState, f->restLastGyrLp);
         f->restLastSquaredDeviations[0] = vqf_square(gyr[0] - f->restLastGyrLp[0])
                 + vqf_square(gyr[1] - f->restLastGyrLp[1]) + vqf_square(gyr[2] - f->restLastGyrLp[2]);
@@ -335,7 +297,7 @@ void vqf_update(struct VQF_FILTER_t *f, float gx, float gy, float gz, float ax, 
     /* 陀螺异常先清空 restT，加速度异常也清空；连续满足条件才累积静止时间。
      * 这里没有操作者静止标志，和 MEKF 的显式静止声明不是同一种先验。 */
     if (f->restBiasEstEnabled) {
-        filterVec(acc, 3, f->restFilterTau, f->accTs, f->restAccLpB, f->restAccLpA,
+        filterVec(acc, 3, f->restFilterTau, f->accTs, f->restLpB, f->restLpA,
                   f->restAccLpState, f->restLastAccLp);
         f->restLastSquaredDeviations[1] = vqf_square(acc[0] - f->restLastAccLp[0])
                 + vqf_square(acc[1] - f->restLastAccLp[1]) + vqf_square(acc[2] - f->restLastAccLp[2]);
@@ -371,9 +333,6 @@ void vqf_update(struct VQF_FILTER_t *f, float gx, float gy, float gz, float ax, 
     }
     vqf_quatMultiply(accCorrQuat, f->accQuat, f->accQuat);
     vqf_normalize(f->accQuat, 4);
-
-    /* 倾斜校正角/秒，仅用于诊断，不是原始陀螺测量。 */
-    f->lastAccCorrAngularRate = acosf(accEarth[2])/f->accTs;
 
     /* 4. 三维卡尔曼零偏估计。R 初始为机体→导航旋转矩阵；运动观测使用
      * 与倾斜通道相同低通后的 R 和水平 bias，保持观测与滤波历史一致。 */
@@ -458,43 +417,10 @@ void vqf_update(struct VQF_FILTER_t *f, float gx, float gy, float gz, float ax, 
     }
 }
 
-void vqf_output(struct VQF_FILTER_t *f)
+static void vqf_output(struct VQF_FILTER_t *f)
 {
-    /* 5. 合成机体→导航姿态，再一次性生成矩阵和欧拉角。
-     * 本层使用标准 roll=X、pitch=Y、yaw=Z（度）；历史 INS 命名转换在 ins.c。
-     * 欧拉角在俯仰 ±90° 附近有奇异性，完整姿态应读取 q。 */
+    /* AHRS 层统一计算欧拉角和累计 yaw；此处只输出姿态四元数。 */
     vqf_quatMultiply(f->accQuat, f->gyrQuat, f->q);
-
-    float q0 = f->q[0], q1 = f->q[1], q2 = f->q[2], q3 = f->q[3];
-    f->rMat[0][0] = 1 - 2*(q2*q2 + q3*q3);
-    f->rMat[0][1] = 2*(q1*q2 - q0*q3);
-    f->rMat[0][2] = 2*(q1*q3 + q0*q2);
-    f->rMat[1][0] = 2*(q1*q2 + q0*q3);
-    f->rMat[1][1] = 1 - 2*(q1*q1 + q3*q3);
-    f->rMat[1][2] = 2*(q2*q3 - q0*q1);
-    f->rMat[2][0] = 2*(q1*q3 - q0*q2);
-    f->rMat[2][1] = 2*(q2*q3 + q0*q1);
-    f->rMat[2][2] = 1 - 2*(q1*q1 + q2*q2);
-
-    float sinp = 2.0f * (q0 * q2 - q1 * q3);
-    if (sinp > 1.0f) sinp = 1.0f;
-    if (sinp < -1.0f) sinp = -1.0f;
-    f->pitch = asinf(sinp) * RAD2DEG;
-    f->roll = atan2f(2.0f * (q0 * q1 + q2 * q3), 1.0f - 2.0f * (q1 * q1 + q2 * q2)) * RAD2DEG;
-    f->yaw = atan2f(2.0f * (q1 * q2 + q0 * q3), 1.0f - 2.0f * (q2 * q2 + q3 * q3)) * RAD2DEG;
-
-    /* 对相邻 yaw 差作 ±180° 回绕，得到连续航向；不是全局绝对航向。 */
-    float yaw_diff = f->yaw - f->last_yaw;
-    if (yaw_diff > 180.0f) {
-        yaw_diff -= 360.0f;
-        f->yaw_laps --;
-    }
-    else if (yaw_diff < -180.0f) {
-        yaw_diff += 360.0f;
-        f->yaw_laps ++;
-    }
-    f->YawTotalAngle += yaw_diff;
-    f->last_yaw = f->yaw;
 }
 
 /* ---------- 框架入口：保护、连续性管理与统计 ---------- */
@@ -532,7 +458,8 @@ uint8_t VQF_Init(VQF_State *s, const float q0[4], float dt)
     if (!isfinite(norm2) || norm2<1e-12f) return 0U;
     memset(s,0,sizeof(*s));
     vqf_init(&s->filter,dt);
-    for (unsigned i=0; i<4; ++i) s->filter.accQuat[i]=q0[i]/sqrtf(norm2);
+    const float norm = sqrtf(norm2);
+    for (unsigned i=0; i<4; ++i) s->filter.accQuat[i]=q0[i]/norm;
     vqf_output(&s->filter);
     s->initialized=1U;
     return 1U;
@@ -564,7 +491,7 @@ uint8_t VQF_Update(VQF_State *s, const float gyro[3], const float accel[3],
     const uint8_t accel_ok=finite_vector(accel,3) && isfinite(norm2) &&
         norm2>1e-6f && norm2<240.0f*240.0f && !(flags&VQF_ACCEL_CLIPPED);
     /* 用局部候选状态运行；数值异常时保留上一拍姿态和零偏。
-     * 局部状态约 0.8 KiB，仍计入 INS 任务栈需求。 */
+     * 局部状态约 0.7 KiB，仍计入 INS 任务栈需求。 */
     struct VQF_FILTER_t next;
     copy_filter(&next, &s->filter);
     vqf_set_timestep(&next,dt);
@@ -573,8 +500,7 @@ uint8_t VQF_Update(VQF_State *s, const float gyro[3], const float accel[3],
                accel_ok?accel[0]:0,accel_ok?accel[1]:0,accel_ok?accel[2]:0);
     vqf_output(&next);
     if (!finite_vector(next.q,4) || !finite_vector(next.bias,3) ||
-        !finite_vector(next.biasP,9) || !isfinite(next.yaw) ||
-        !isfinite(next.pitch) || !isfinite(next.roll)) {
+        !finite_vector(next.biasP,9)) {
         ++s->numeric_fault_count;
         VQF_BreakContinuity(s);
         return s->status=VQF_NUMERIC_FAULT;

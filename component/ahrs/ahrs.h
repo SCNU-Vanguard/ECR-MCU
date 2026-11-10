@@ -35,7 +35,7 @@ typedef struct
     float dt_s;                  /* 与上一个样本的真实间隔，合法范围 [1e-5, 0.02] */
     bool  gyro_clipped;          /* 陀螺饱和 */
     bool  accel_clipped;         /* 加速度计饱和 */
-    bool  stationary;            /* 外部判断的静止（只有 MEKF 使用） */
+    bool  stationary;            /* 外部确认静止（MEKF / Mahony 使用，主要由门限确认静止） */
 } ahrs_sample_t;
 
 typedef struct

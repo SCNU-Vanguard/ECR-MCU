@@ -63,3 +63,29 @@ uint32_t cqueue_out(struct __cqueue *queue, void *buffer, uint32_t length)
     queue->read_index += length;
     return length;
 }
+
+uint32_t cqueue_peek(const struct __cqueue *queue, void *buffer, uint32_t length)
+{
+    uint32_t used_count = cqueue_used(queue);
+
+    if (length > used_count)
+    {
+        length = used_count;
+    }
+    for (uint32_t index = 0; index < length; index++)
+    {
+        memcpy((uint8_t *)buffer + index * queue->element_size,
+               (const uint8_t *)queue->data + ((queue->read_index + index) & queue->mask) * queue->element_size,
+               queue->element_size);
+    }
+    return length;
+}
+
+void cqueue_drop(struct __cqueue *queue, uint32_t length)
+{
+    if (length > cqueue_used(queue))
+    {
+        length = cqueue_used(queue);
+    }
+    queue->read_index += length;
+}

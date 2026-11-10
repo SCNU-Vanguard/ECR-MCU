@@ -37,8 +37,8 @@
 #define GYRO_CHIP_ID_VALUE      0x0Fu
 
 /* 采样率对应的寄存器取值（改了要和 bmi088.h 的 BMI088_RATE_HZ / BMI088_ACCEL_RATE_HZ 一起改）：
- *   加速度计 ODR 0x0B = 800 Hz（OSR4，高 4 位 0x8）；陀螺仪 0x02 = ODR 1000 Hz / 带宽 116 Hz。
- *   其他档位：加速度计 0x09/0x0A/0x0B/0x0C = 200/400/800/1600 Hz；陀螺仪 0x04/0x03/0x02/0x01 = 200/400/1000/2000 Hz */
+ *   当前加速度计 ACC_CONF=0x8C：ODR 0x0C = 1600 Hz，带宽配置 0x8（OSR4）；陀螺仪 GYRO_BANDWIDTH=0x81：ODR 0x01 = 2000 Hz。
+ *   加速度计 ODR 0x09/0x0A/0x0B/0x0C = 200/400/800/1600 Hz；陀螺仪 ODR 0x04/0x03/0x02/0x01 = 200/400/1000/2000 Hz。 */
 #define ACCEL_CONF_VALUE        (0x80u | 0x0Cu)
 #define GYRO_BANDWIDTH_VALUE    (0x80u | 0x01u)
 #define ACCEL_RANGE_6G          0x01u
@@ -57,7 +57,7 @@
 #define TEMPERATURE_OFFSET_C                23.0f
 #define RAW_CLIP_THRESHOLD                  32760       /* 接近 int16 满量程就认为饱和 */
 
-/* 温度只是附带信息，每读这么多帧加速度计就读一次温度（800 Hz / 100 = 8 Hz） */
+/* 温度只是附带信息，每成功读取 100 帧加速度计后读一次温度寄存器，当前约 16 Hz。 */
 #define TEMPERATURE_READ_INTERVAL_FRAMES    100u
 
 typedef struct
@@ -305,6 +305,27 @@ void bmi088_get_stats(bmi088_stats_t *stats)
     os_irq_restore(irq_key);
 }
 
+bool bmi088_get_temperature(float *temperature_c, uint32_t *sequence)
+{
+    if (temperature_c == NULL || sequence == NULL)
+    {
+        return false;
+    }
+
+    uint32_t irq_key = os_irq_save();
+    uint32_t count = driver.stats.temperature_count;
+    int16_t raw = driver.temperature_raw;
+    os_irq_restore(irq_key);
+
+    if (count == 0u)
+    {
+        return false;
+    }
+    *temperature_c = TEMPERATURE_C_PER_LSB * (float)raw + TEMPERATURE_OFFSET_C;
+    *sequence = count;
+    return true;
+}
+
 /* ===== 以下函数都在中断里运行（DRDY 中断、SPI DMA 完成中断；它们在同一个中断优先级，互不抢占）===== */
 
 static void on_spi_done(int32_t result, void *context);
@@ -406,6 +427,7 @@ static void publish_gyro_frame(void)
     frame.accel_timestamp_us = driver.accel_timestamp_us;
     frame.gyro_sequence = driver.inflight_sequence;
     frame.accel_sequence = driver.accel_data_sequence;
+    frame.temperature_sequence = driver.stats.temperature_count;
     driver.frame_callback(&frame, driver.frame_context);
 }
 

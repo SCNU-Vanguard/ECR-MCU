@@ -301,6 +301,16 @@ static float madg_effectiveBeta(void)
 	return target_beta;
 }
 
+void MadgwickAHRSbreakContinuity(void)
+{
+	MadgwickState.rest_time = 0.0f;
+	MadgwickState.stationary = 0U;
+	MadgwickState.rejection_time = 0.0f;
+	MadgwickState.accel_initialized = 0U;
+	MadgwickState.accel_confidence = 0.0f;
+	MadgwickState.accel_ignored = 1U;
+}
+
 /*
  * 对加速度低通滤波并计算可信度，同时检测静止、学习三轴残余陀螺仪零偏，
  * 最终返回归一化的加速度方向。返回 0 表示本次只能进行纯陀螺仪积分。
@@ -324,12 +334,16 @@ static uint8_t madg_prepareImu(float *gx, float *gy, float *gz,
 	float recovery_weight = 0.0f;
 	uint8_t stationary_candidate;
 
-	if (!madg_vectorIsFinite(*ax, *ay, *az))
+	/* 加速度失效时仍需扣除已学习的陀螺零偏。 */
+	*gx -= MadgwickState.gyro_bias[0];
+	*gy -= MadgwickState.gyro_bias[1];
+	*gz -= MadgwickState.gyro_bias[2];
+	const float input_norm2 = *ax * *ax + *ay * *ay + *az * *az;
+	if (!madg_vectorIsFinite(*ax, *ay, *az) || !madg_isFinite(input_norm2) ||
+	    input_norm2 <= MADGWICK_NORM_EPSILON * MADGWICK_NORM_EPSILON)
 	{
-		MadgwickState.accel_confidence = 0.0f;
-		MadgwickState.accel_ignored = 1U;
-		MadgwickState.stationary = 0U;
-		MadgwickState.rest_time = 0.0f;
+		MadgwickAHRSbreakContinuity();
+		MadgwickState.accel_reject_count++;
 		return 0U;
 	}
 
@@ -435,9 +449,6 @@ static uint8_t madg_prepareImu(float *gx, float *gy, float *gz,
 		MadgwickState.accel_reject_count++;
 	}
 
-	*gx -= MadgwickState.gyro_bias[0];
-	*gy -= MadgwickState.gyro_bias[1];
-	*gz -= MadgwickState.gyro_bias[2];
 	gyro_norm = sqrtf(*gx * *gx + *gy * *gy + *gz * *gz);
 
 	stationary_candidate = (uint8_t)(

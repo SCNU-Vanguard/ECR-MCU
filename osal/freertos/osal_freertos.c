@@ -12,6 +12,23 @@ static inline TickType_t ms_to_ticks(uint32_t time_ms)
     return (time_ms == OS_WAIT_FOREVER) ? portMAX_DELAY : (TickType_t)pdMS_TO_TICKS(time_ms);
 }
 
+/* 复用平台已有的 CMSIS-Core 屏障，不使用 CMSIS-RTOS API。
+ * FreeRTOS 的 portMEMORY_BARRIER 仅是编译器屏障，不能替代 DMB。 */
+void os_memory_barrier(void)
+{
+    __DMB();
+}
+
+void os_data_sync_barrier(void)
+{
+    __DSB();
+}
+
+void os_instruction_sync_barrier(void)
+{
+    __ISB();
+}
+
 bool os_in_isr(void)
 {
     return __get_IPSR() != 0u;

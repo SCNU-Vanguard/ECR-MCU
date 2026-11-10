@@ -4,12 +4,12 @@
 
 /* BMI088 驱动：数据就绪（DRDY）中断 + SPI DMA 采集。
  *   - 加速度计 INT1 -> GPIO_ACCEL_INT，陀螺仪 INT3 -> GPIO_GYRO_INT，高电平有效，上升沿触发（CubeMX 里引脚要配成外部中断，上升沿）
- *   - 每次 DRDY 在中断里记录时间戳，并启动一次 SPI DMA 读取（陀螺仪优先，其次加速度计，温度约 4 Hz 一次），整个过程中断里完成，不占任务时间
- *   - 每读完一帧陀螺仪数据，就把"这帧陀螺仪 + 最近一帧加速度计"交给回调（在中断里调用，通常用 event_post_isr 转给任务）
- * 采样率：陀螺仪 2000 Hz（解算频率，每个陀螺仪样本出一帧），加速度计 1600 Hz（只用来校正，用最近一帧）。量程固定：加速度计 ±6 g，陀螺仪 ±2000 dps */
-#define BMI088_RATE_HZ                  1600u       /* 陀螺仪 ODR，也是帧率 */
+ *   - 每次 DRDY 在中断里记录时间戳，并启动一次 SPI DMA 读取（陀螺仪优先，其次加速度计）；温度每 100 个加速度样本读取一次
+ *   - 每读完一帧陀螺仪数据，就把"这帧陀螺仪 + 最近一帧已读出的加速度计"交给回调（在中断里调用，通常用 event_post_isr 转给任务）
+ * 当前寄存器配置：陀螺仪 ODR 2000 Hz（解算主频），加速度计 ODR 1600 Hz（用于校正）。量程固定：加速度计 ±6 g，陀螺仪 ±2000 dps */
+#define BMI088_RATE_HZ                  2000u       /* 陀螺仪 ODR，也是姿态更新目标帧率 */
 #define BMI088_SAMPLE_PERIOD_US         (1000000u / BMI088_RATE_HZ)
-#define BMI088_ACCEL_RATE_HZ            2000u
+#define BMI088_ACCEL_RATE_HZ            1600u
 #define BMI088_ACCEL_SAMPLE_PERIOD_US   (1000000u / BMI088_ACCEL_RATE_HZ)
 
 /* 一帧原始数据（LSB），时间戳是 DRDY 中断里取的 bsp_tick_us 低 32 位（约 71 分钟回绕，做差即可） */
@@ -22,6 +22,7 @@ typedef struct
     uint32_t accel_timestamp_us;
     uint32_t gyro_sequence;             /* 陀螺仪 DRDY 计数，帧之间不连续说明丢了样本 */
     uint32_t accel_sequence;
+    uint32_t temperature_sequence;      /* 成功读取温度寄存器的计数；0 表示尚无有效温度 */
 } bmi088_frame_t;
 
 /* 标定参数（取值见当前兵种的 ins_config.h）：accel = 灵敏度 * raw * scale - scale * offset；gyro = 灵敏度 * raw - offset */
@@ -62,6 +63,7 @@ void    bmi088_convert(const bmi088_frame_t *frame, bmi088_sample_t *sample);
 void    bmi088_set_frame_callback(bmi088_frame_callback_t callback, void *context);     /* 回调在中断里调用 */
 int32_t bmi088_start(void);                                         /* 开始采集：登记中断并补读一次，清掉 DRDY 线 */
 void    bmi088_get_stats(bmi088_stats_t *stats);
+bool    bmi088_get_temperature(float *temperature_c, uint32_t *sequence); /* 读取最新成功温度样本 */
 /* 采集中断（太久没有新帧）后在任务里调用：中止在跑的 DMA，重新读一次数据，让 DRDY 线重新产生边沿 */
 int32_t bmi088_recover(void);
 #endif
