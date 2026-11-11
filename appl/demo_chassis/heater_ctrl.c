@@ -4,7 +4,7 @@
 #include "component/common/err.h"
 #include "component/log/log.h"
 #include "cdd/imu/bmi088/bmi088.h"
-#include "cdd/imu/heater/heater.h"
+#include "cdd/imu/bmi088/heater.h"
 #include "cdd/imu/ins/ins.h"
 
 #define HEATER_STALE_LIMIT_CYCLES   5u

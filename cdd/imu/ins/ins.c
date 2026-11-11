@@ -22,11 +22,9 @@
 #error "INS_ASSUME_STATIONARY must be 0 or 1"
 #endif
 
-#ifdef CONFIG_CDD_IMU_HEATER
 #define INS_TEMP_ENABLE_MIN_C       (IMU_HEATER_TARGET_C - 2.0f)
 #define INS_TEMP_ENABLE_MAX_C       (IMU_HEATER_TARGET_C + 2.0f)
 #define INS_TEMP_SETTLE_US          2500000u
-#endif
 #define INS_TEMP_MAX_AGE_US         500000u
 
 /* 加速度计样本比陀螺仪样本旧过这么多就认为过期，这一拍加速度计不参与校正（只用陀螺积分）：两个加速度计周期 + 1 ms */
@@ -59,22 +57,15 @@ static uint32_t ins_temperature_ready_since_us;
 static uint32_t ins_temperature_last_sequence;
 static uint32_t ins_temperature_last_update_us;
 
-#ifdef CONFIG_CDD_IMU_HEATER
 static bool ins_temperature_in_range(int16_t temperature_raw)
 {
     const float temperature_c = 0.125f * (float)temperature_raw + 23.0f;
     return temperature_c >= INS_TEMP_ENABLE_MIN_C && temperature_c <= INS_TEMP_ENABLE_MAX_C;
 }
-#endif
 
 static bool ins_temperature_settled(uint32_t gyro_timestamp_us)
 {
-#ifdef CONFIG_CDD_IMU_HEATER
     return (uint32_t)(gyro_timestamp_us - ins_temperature_ready_since_us) >= INS_TEMP_SETTLE_US;
-#else
-    (void)gyro_timestamp_us;
-    return true;
-#endif
 }
 
 /* 在 publish_version 写入区间内调用，只清除姿态，不影响传感器快照。 */
@@ -260,14 +251,9 @@ static void ins_run(void *argument, const uint8_t *data, uint16_t length)
         ins_temperature_last_sequence = frame.temperature_sequence;
         ins_temperature_last_update_us = frame.gyro_timestamp_us;
     }
-#ifdef CONFIG_CDD_IMU_HEATER
     const bool temperature_ready = frame.temperature_sequence > 0u &&
                                    (uint32_t)(frame.gyro_timestamp_us - ins_temperature_last_update_us) <= INS_TEMP_MAX_AGE_US &&
                                    ins_temperature_in_range(frame.temperature_raw);
-#else
-    /* 无加热模式不依赖温度寄存器，首帧即可启动姿态解算。 */
-    const bool temperature_ready = true;
-#endif
     if (temperature_ready)
     {
         if (!ins_temperature_gate_open)
