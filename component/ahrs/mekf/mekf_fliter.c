@@ -14,28 +14,6 @@
 #include <stddef.h>
 #include <string.h>
 
-#if MEKF_USE_CMSIS_DSP
-#include "arm_math.h"
-#endif
-
-/* 使用固定尺寸 float 数组，不依赖动态内存或硬件。 */
-static void copy_f32(float *dst, const float *src, unsigned count)
-{
-#if MEKF_USE_CMSIS_DSP
-    arm_copy_f32(src,dst,count);
-#else
-    memcpy(dst,src,count*sizeof(float));
-#endif
-}
-static void zero_f32(float *dst, unsigned count)
-{
-#if MEKF_USE_CMSIS_DSP
-    arm_fill_f32(0.0f,dst,count);
-#else
-    memset(dst,0,count*sizeof(float));
-#endif
-}
-
 static float dot3(const float a[3], const float b[3])
 {
     return a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
@@ -146,7 +124,7 @@ static void attitude_observation_covariance(const float a[18], const float P[36]
 static void propagate_covariance(const float b[9], const float p[36], float dst[36])
 {
     float ap[36];
-    copy_f32(ap+18,p+18,18);
+    memcpy(ap+18,p+18,18*sizeof(float));
     for (unsigned i=0; i<3; ++i) for (unsigned j=0; j<6; ++j) {
         float sum=p[6*i+j];
         for (unsigned k=0; k<3; ++k) sum+=b[3*i+k]*p[6*(k+3)+j];
@@ -166,7 +144,7 @@ static void block_covariance(const float block[9], unsigned offset,
 {
     float ap[36];
     const unsigned unchanged=3-offset;
-    copy_f32(ap+6*unchanged,p+6*unchanged,18);
+    memcpy(ap+6*unchanged,p+6*unchanged,18*sizeof(float));
     for (unsigned i=0; i<3; ++i) for (unsigned j=0; j<6; ++j) {
         float sum=0;
         for (unsigned k=0; k<3; ++k) sum+=block[3*i+k]*p[6*(offset+k)+j];
@@ -293,7 +271,7 @@ static uint8_t predict(MEKF_State *f, const float gyro[3], float dt)
     }
     if (!condition_covariance(p)) return 0;
     memcpy(f->q,next_q,sizeof(next_q));
-    copy_f32(f->P,p,36);
+    memcpy(f->P,p,36*sizeof(float));
     ++f->predict_count;
     return 1;
 }
@@ -366,7 +344,7 @@ static uint8_t correct(MEKF_State *f, const float h[18], const float residual[3]
         }
     }
     /* ZARU 只更新零偏，不回溯修改姿态。 */
-    if (bias_only) zero_f32(gain,9);
+    if (bias_only) memset(gain,0,9*sizeof(float)); 
     for (unsigned i=0; i<6; ++i) {
         float sum=0;
         for (unsigned j=0; j<n; ++j) sum+=gain[3*i+j]*residual[j];
@@ -401,7 +379,7 @@ static uint8_t correct(MEKF_State *f, const float h[18], const float residual[3]
         /* ZARU 不改变四元数。 */
         if (!condition_covariance(p)) { ++f->numeric_fault_count; return 0; }
         for (unsigned i=0; i<3; ++i) f->bias[i]+=dx[i+3];
-        copy_f32(f->P,p,36);
+        memcpy(f->P,p,36*sizeof(float));
         return 1;
     }
 
@@ -415,7 +393,7 @@ static uint8_t correct(MEKF_State *f, const float h[18], const float residual[3]
     }
     inject_global(f->q,dx);
     for (unsigned i=0; i<3; ++i) f->bias[i]+=dx[i+3];
-    copy_f32(f->P,reset_p,36);
+    memcpy(f->P,reset_p,36*sizeof(float));
     return 1;
 }
 
@@ -426,7 +404,7 @@ static uint8_t correct_accel(MEKF_State *f, const float acc[3])
                       2*(q[2]*q[3]+q[0]*q[1]),
                       1-2*(q[1]*q[1]+q[2]*q[2])};
     float z[3], tangent[6], h[18], residual[3]={0}, rmat[9];
-    zero_f32(h,18);
+    memset(h,0,18*sizeof(float));
     rotation_matrix(q,rmat);
     for (unsigned i=0; i<3; ++i) z[i]=acc[i]/f->accel_norm;
     /* 反向重力方向不是有效观测。 */
@@ -504,7 +482,7 @@ void MEKF_BreakContinuity(MEKF_State *f)
     if (!f) return;
     f->status=MEKF_INVALID_SAMPLE;
     f->stationary_elapsed=f->zero_rate_elapsed=f->tilt_recovery_elapsed=0;
-    zero_f32(f->zero_rate_integral,3);
+    memset(f->zero_rate_integral,0,3*sizeof(float)); 
 }
 
 uint8_t MEKF_Update(MEKF_State *f, const float gyro[3], const float acc[3],
@@ -571,11 +549,11 @@ uint8_t MEKF_Update(MEKF_State *f, const float gyro[3], const float acc[3],
                 ++f->zero_rate_count;
             }
             f->zero_rate_elapsed=0;
-            zero_f32(f->zero_rate_integral,3);
+            memset(f->zero_rate_integral,0,3*sizeof(float));
         }
     } else {
         f->stationary_elapsed=f->zero_rate_elapsed=f->tilt_recovery_elapsed=0;
-        zero_f32(f->zero_rate_integral,3);
+        memset(f->zero_rate_integral,0,3*sizeof(float));
     }
     return f->status;
 }
