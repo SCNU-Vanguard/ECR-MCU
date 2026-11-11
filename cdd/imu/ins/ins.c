@@ -6,6 +6,7 @@
 #include <string.h>
 #include "osal/event.h"
 #include "osal/osal.h"
+#include "bsp/cpu/bsp_cpu.h"
 #include "component/common/initcall.h"
 #include "component/common/err.h"
 #include "component/log/log.h"
@@ -93,9 +94,9 @@ static void clear_attitude(void)
 static void invalidate_attitude(void)
 {
     publish_version++;
-    os_memory_barrier();
+    DMB();
     clear_attitude();
-    os_memory_barrier();
+    DMB();
     publish_version++;
 }
 
@@ -168,7 +169,7 @@ static void publish_snapshot(const bmi088_sample_t *sample, bool temperature_val
                              bool clear_pose, bool update_pose, uint32_t frame_begin_cycles)
 {
     publish_version++;
-    os_memory_barrier();
+    DMB();
     memcpy(published_attitude.gyro_rad_s, sample->gyro_rad_s, sizeof published_attitude.gyro_rad_s);
     memcpy(published_attitude.accel_m_s2, sample->accel_m_s2, sizeof published_attitude.accel_m_s2);
     published_attitude.temperature_c = sample->temperature_c;
@@ -192,7 +193,7 @@ static void publish_snapshot(const bmi088_sample_t *sample, bool temperature_val
         const uint32_t frame_end_cycles = bsp_cycle_count();
         published_attitude.ins_cost_time = (uint32_t)((uint64_t)(frame_end_cycles - frame_begin_cycles) * 1000000u / bsp_cycle_freq_hz());
     }
-    os_memory_barrier();
+    DMB();
     publish_version++;
 }
 
@@ -204,9 +205,9 @@ void ins_get_attitude(ins_attitude_t *attitude)
     do
     {
         version_before = publish_version;
-        os_memory_barrier();
+        DMB();
         *attitude = published_attitude;
-        os_memory_barrier();
+        DMB();
         version_after = publish_version;
     } while ((version_before & 1u) != 0u || version_before != version_after);
 }

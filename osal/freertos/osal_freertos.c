@@ -1,8 +1,7 @@
 #include "osal/osal.h"
 #include "osal/period.h"
 #include "osal/event.h"
-
-#include CMSIS_device_header            /* __get_IPSR；FreeRTOSConfig.h 里定义为 "stm32h7xx.h" */
+#include "bsp/cpu/bsp_cpu.h"
 
 /* configAPPLICATION_ALLOCATED_HEAP = 1：堆不放 DTCM。框架任务是静态分配的，这块留给 pvPortMalloc */
 uint8_t ucHeap[configTOTAL_HEAP_SIZE] SRAM_NONCACHEABLE;
@@ -12,26 +11,9 @@ static inline TickType_t ms_to_ticks(uint32_t time_ms)
     return (time_ms == OS_WAIT_FOREVER) ? portMAX_DELAY : (TickType_t)pdMS_TO_TICKS(time_ms);
 }
 
-/* 复用平台已有的 CMSIS-Core 屏障，不使用 CMSIS-RTOS API。
- * FreeRTOS 的 portMEMORY_BARRIER 仅是编译器屏障，不能替代 DMB。 */
-void os_memory_barrier(void)
-{
-    __DMB();
-}
-
-void os_data_sync_barrier(void)
-{
-    __DSB();
-}
-
-void os_instruction_sync_barrier(void)
-{
-    __ISB();
-}
-
 bool os_in_isr(void)
 {
-    return __get_IPSR() != 0u;
+    return xPortIsInsideInterrupt() != pdFALSE;
 }
 
 bool os_running(void)
@@ -217,17 +199,14 @@ void os_malloc_failed_handler(void)
 
 static void os_fatal_stop(const char *task_name)
 {
-    __disable_irq();
+    bsp_irq_disable();
     for (unsigned name_index = 0u; name_index < sizeof os_overflow_task_name - 1u && task_name != NULL && task_name[name_index] != '\0'; name_index++)
     {
         os_overflow_task_name[name_index] = task_name[name_index];
     }
-    if ((CoreDebug->DHCSR & CoreDebug_DHCSR_C_DEBUGEN_Msk) != 0u)
+    if (bsp_debugger_attached())
     {
-        __BKPT(0);                                          /* ���ŵ�����ʱͣ������� os_overflow_task_name */
+        bsp_breakpoint();                                   /* 调试器连着就停在这里，看 os_overflow_task_name */
     }
-    NVIC_SystemReset();
-    for (;;)
-    {
-    }
+    bsp_system_reset();
 }

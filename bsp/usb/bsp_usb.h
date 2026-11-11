@@ -10,8 +10,4 @@ int32_t  bsp_usb_write(const void *data, uint32_t len);
  * 全速 CDC 一个包最多 64 字节，所以 task->max_len 至少 64；没有绑定时收到的数据被丢弃 */
 void     bsp_usb_bind_event(struct event_task *task);
 bool     bsp_usb_connected(void);
-
-/* 下面两个由 CubeIDE 生成的 usbd_cdc_if.c 在 USER CODE 段里调用（在 USB 中断上下文） */
-void bsp_usb_rx_isr(const uint8_t *buf, uint32_t len);
-void bsp_usb_tx_done_isr(void);
 #endif

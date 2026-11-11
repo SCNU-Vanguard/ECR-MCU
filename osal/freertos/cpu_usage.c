@@ -5,12 +5,12 @@
  * 因此：
  *   - 比 2 us 短的中断（DRDY、DMA 完成等）算在空闲里，使占用率略偏低；比 2 us 长的中断算占用。
  *   - 和空闲任务同优先级的任务会被当成空闲（本框架最低优先级任务高于空闲，不受影响）。
- *   - 总时间用 FreeRTOS tick（毫秒），空闲时间用 DWT 周期计数器累计成 64 位，所以统计窗口多长都不会回绕。
- * 依赖 DWT 周期计数器已打开（bsp_tick_init 里打开）。
+ *   - 总时间用 FreeRTOS tick（毫秒），空闲时间用周期计数器累计成 64 位，所以统计窗口多长都不会回绕。
+ * 依赖周期计数器已打开（bsp_tick_init 里打开）。
  *
  * shell：cpu 打印"自上次 cpu 命令以来"和"自启动以来"的占用率；第一次执行时两者相同。 */
 #include "osal/osal.h"
-#include CMSIS_device_header
+#include "bsp/tick/bsp_tick.h"
 
 #define IDLE_GAP_MAX_US     2u          /* 空闲钩子两次调用间隔超过这个值，就认为空闲任务被抢占过 */
 
@@ -24,12 +24,12 @@ static uint32_t window_start_tick_ms;
 
 void os_idle_hook(void)
 {
-    uint32_t now_cycles = DWT->CYCCNT;
+    uint32_t now_cycles = bsp_cycle_count();
     uint32_t gap_cycles = now_cycles - last_hook_cycles;
 
     if (idle_gap_max_cycles == 0u)
     {
-        idle_gap_max_cycles = (SystemCoreClock / 1000000u) * IDLE_GAP_MAX_US;
+        idle_gap_max_cycles = (bsp_cycle_freq_hz() / 1000000u) * IDLE_GAP_MAX_US;
     }
     last_hook_cycles = now_cycles;
     if (gap_cycles <= idle_gap_max_cycles)
@@ -53,7 +53,7 @@ static uint64_t read_idle_cycles(void)
 /* 空闲时间占比换算成 0.1% 单位的占用率（0..1000） */
 static uint32_t usage_permille(uint64_t idle_delta_cycles, uint32_t elapsed_ms)
 {
-    uint64_t total_cycles = (uint64_t)elapsed_ms * (SystemCoreClock / 1000u);
+    uint64_t total_cycles = (uint64_t)elapsed_ms * (bsp_cycle_freq_hz() / 1000u);
 
     if (total_cycles == 0u)
     {

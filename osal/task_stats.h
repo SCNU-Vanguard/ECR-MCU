@@ -3,8 +3,8 @@
 #include "component/common/types.h"
 
 /* 任务统计：每个周期任务、事件任务的描述符里都带一份，随任务一起静态分配（注册任务时自动创建）。
- * 时间用 Cortex-M7 的 DWT 周期计数器测量（480 MHz 下分辨率约 2 ns），单位是"周期数"，
- * 打印时再换算成微秒。统计的是墙钟时间：任务执行期间被更高优先级任务或中断抢占的时间也算在内。
+ * 时间用 bsp_cycle_count() 的周期数（bsp_tick_init 之后才有效），打印时再换算成微秒。
+ * 统计的是墙钟时间：任务执行期间被更高优先级任务或中断抢占的时间也算在内。
  *
  * 统计窗口 = 从上一次 task_stats_dump() 到这一次。dump 之后窗口内的统计量全部清零，重新开始。 */
 struct task_stats
@@ -28,14 +28,12 @@ struct task_stats
 };
 
 #ifdef CONFIG_OSAL_TASK_STATS
-void     task_stats_hw_init(void);                                       /* 打开 DWT 周期计数器，framework_init 调用 */
 uint32_t task_stats_now(void);                                           /* 读周期计数器 */
 uint32_t task_stats_cycles_per_us(void);                                 /* 每微秒多少个周期 */
 uint32_t task_stats_begin(struct task_stats *stats, uint32_t stamp);     /* 任务开始执行时调用，返回开始时刻 */
 void     task_stats_end(struct task_stats *stats, uint32_t start_cycles);/* 任务执行完调用 */
 void     task_stats_reset(struct task_stats *stats);                     /* 清零窗口内的统计量（保留 base 和 last_start） */
 #else
-#define task_stats_hw_init()                      ((void)0)
 #define task_stats_now()                          0u
 #define task_stats_cycles_per_us()                1u
 #define task_stats_begin(stats, stamp)            0u

@@ -56,7 +56,7 @@ void bsp_usb_bind_event(struct event_task *task)
     rx_event = task;
 }
 
-void bsp_usb_rx_isr(const uint8_t *buf, uint32_t len)
+static void bsp_usb_rx_isr(const uint8_t *buf, uint32_t len)
 {
     if (rx_event != NULL && len <= 0xFFFFu)
     {
@@ -64,7 +64,7 @@ void bsp_usb_rx_isr(const uint8_t *buf, uint32_t len)
     }
 }
 
-void bsp_usb_tx_done_isr(void)
+static void bsp_usb_tx_done_isr(void)
 {
     tx_busy = 0u;
     tx_kick();
@@ -72,6 +72,8 @@ void bsp_usb_tx_done_isr(void)
 
 static int32_t bsp_usb_init(void)
 {
+    CDC_RegisterRxHook(bsp_usb_rx_isr);
+    CDC_RegisterTxDoneHook(bsp_usb_tx_done_isr);
     return cqueue_init(&tx_queue, tx_queue_mem, sizeof tx_queue_mem, 1u);
 }
 INIT_BSP_STAGE1(bsp_usb_init);

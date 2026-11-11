@@ -1,6 +1,21 @@
 #include "bsp/gpio/bsp_gpio.h"
 #include "component/common/err.h"
 
+void bsp_gpio_write(gpio_id_e id, int level)
+{
+    HAL_GPIO_WritePin(board_pins[id].port, board_pins[id].pin, level ? GPIO_PIN_SET : GPIO_PIN_RESET);
+}
+
+int bsp_gpio_read(gpio_id_e id)
+{
+    return HAL_GPIO_ReadPin(board_pins[id].port, board_pins[id].pin) == GPIO_PIN_SET;
+}
+
+void bsp_gpio_toggle(gpio_id_e id)
+{
+    HAL_GPIO_TogglePin(board_pins[id].port, board_pins[id].pin);
+}
+
 typedef struct
 {
     bsp_gpio_exti_callback_t callback;

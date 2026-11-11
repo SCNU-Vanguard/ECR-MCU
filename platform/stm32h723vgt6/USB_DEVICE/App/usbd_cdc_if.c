@@ -22,9 +22,6 @@
 #include "usbd_cdc_if.h"
 
 /* USER CODE BEGIN INCLUDE */
-#ifdef CONFIG_BSP_USB
-#include "bsp/usb/bsp_usb.h"
-#endif
 
 /* USER CODE END INCLUDE */
 
@@ -34,6 +31,8 @@
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
+static void (*cdc_rx_hook)(const uint8_t *buf, uint32_t len);
+static void (*cdc_tx_done_hook)(void);
 
 /* USER CODE END PV */
 
@@ -267,9 +266,10 @@ static int8_t CDC_Control_HS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 static int8_t CDC_Receive_HS(uint8_t* Buf, uint32_t *Len)
 {
   /* USER CODE BEGIN 11 */
-#ifdef CONFIG_BSP_USB
-  bsp_usb_rx_isr(Buf, *Len);
-#endif
+  if (cdc_rx_hook != NULL)
+  {
+    cdc_rx_hook(Buf, *Len);
+  }
   USBD_CDC_SetRxBuffer(&hUsbDeviceHS, &Buf[0]);
   USBD_CDC_ReceivePacket(&hUsbDeviceHS);
   return (USBD_OK);
@@ -316,14 +316,24 @@ static int8_t CDC_TransmitCplt_HS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
   UNUSED(Buf);
   UNUSED(Len);
   UNUSED(epnum);
-#ifdef CONFIG_BSP_USB
-  bsp_usb_tx_done_isr();
-#endif
+  if (cdc_tx_done_hook != NULL)
+  {
+    cdc_tx_done_hook();
+  }
   /* USER CODE END 14 */
   return result;
 }
 
 /* USER CODE BEGIN PRIVATE_FUNCTIONS_IMPLEMENTATION */
+void CDC_RegisterRxHook(void (*hook)(const uint8_t *buf, uint32_t len))
+{
+  cdc_rx_hook = hook;
+}
+
+void CDC_RegisterTxDoneHook(void (*hook)(void))
+{
+  cdc_tx_done_hook = hook;
+}
 
 /* USER CODE END PRIVATE_FUNCTIONS_IMPLEMENTATION */
 

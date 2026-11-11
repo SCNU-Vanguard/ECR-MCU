@@ -3,11 +3,6 @@
 
 #include <stdint.h>
 
-/* 可选的 CMSIS-DSP 缓冲区操作。 */
-#ifndef MEKF_USE_CMSIS_DSP
-#define MEKF_USE_CMSIS_DSP 0
-#endif
-
 #ifdef __cplusplus
 extern "C" {
 #endif

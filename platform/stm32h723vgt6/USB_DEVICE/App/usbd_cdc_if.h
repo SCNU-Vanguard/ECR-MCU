@@ -109,7 +109,9 @@ extern USBD_CDC_ItfTypeDef USBD_Interface_fops_HS;
 uint8_t CDC_Transmit_HS(uint8_t* Buf, uint16_t Len);
 
 /* USER CODE BEGIN EXPORTED_FUNCTIONS */
-
+/* 应用在 CDC 回调里注册。空指针表示不处理。platform 不包含 BSP。 */
+void CDC_RegisterRxHook(void (*hook)(const uint8_t *buf, uint32_t len));
+void CDC_RegisterTxDoneHook(void (*hook)(void));
 /* USER CODE END EXPORTED_FUNCTIONS */
 
 /**

@@ -1,67 +1,20 @@
 /*
-******************************************************************************
-**
+ * STM32H723VGTx 链接脚本，源自 STM32CubeMX LinkerScript.ld
+ * Copyright (c) 2025 STMicroelectronics. All rights reserved.
+ * 在 Cube 脚本上增补 initcall、周期/事件任务、shell、ITCM、可缓存/不可缓存段。
+ */
 
-**  File        : LinkerScript.ld
-**
-**  Author		: STM32CubeMX
-**
-**  Abstract    : Linker script for STM32H723VGTx series
-**                1024Kbytes FLASH and 560Kbytes RAM
-**
-**                Set heap size, stack size and stack location according
-**                to application requirements.
-**
-**                Set memory bank area and size if external memory is used.
-**
-**  Target      : STMicroelectronics STM32
-**
-**  Distribution: The file is distributed “as is,” without any warranty
-**                of any kind.
-**
-*****************************************************************************
-** @attention
-**
-** <h2><center>&copy; COPYRIGHT(c) 2025 STMicroelectronics</center></h2>
-**
-** Redistribution and use in source and binary forms, with or without modification,
-** are permitted provided that the following conditions are met:
-**   1. Redistributions of source code must retain the above copyright notice,
-**      this list of conditions and the following disclaimer.
-**   2. Redistributions in binary form must reproduce the above copyright notice,
-**      this list of conditions and the following disclaimer in the documentation
-**      and/or other materials provided with the distribution.
-**   3. Neither the name of STMicroelectronics nor the names of its contributors
-**      may be used to endorse or promote products derived from this software
-**      without specific prior written permission.
-**
-** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-** AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-** IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-** DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-** FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-** DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-** SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-** CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-** OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-**
-*****************************************************************************
-*/
-
-/* Entry Point */
 ENTRY(Reset_Handler)
 
-/* Highest address of the user mode stack */
-_estack = ORIGIN(DTCM) + LENGTH(DTCM);    /* end of DTCM，主栈从这里往下长 */
-/* Generate a link error if heap and stack don't fit into RAM */
-_Min_Heap_Size = 0x1000;      /* required amount of heap  */
-_Min_Stack_Size = 0x2000; /* required amount of stack */
+/* 主栈从 DTCM 末尾往下长 */
+_estack = ORIGIN(DTCM) + LENGTH(DTCM);
+/* .bss 顶到这里就报链接错误，给 newlib 堆和主栈留出空档 */
+_Min_Heap_Size = 0x1000;
+_Min_Stack_Size = 0x2000;
 
-/* Specify the memory areas */
+/* 顺序就是链接报告里的顺序，和地址高低无关 */
 MEMORY
 {
-/* 顺序就是链接报告里的顺序，和地址高低无关 */
 DTCM   (xrw)      : ORIGIN = 0x20000000, LENGTH = 128K   /* 栈、.data、.bss */
 RAM    (xrw)      : ORIGIN = 0x24040000, LENGTH = 64K    /* AXI 后 64 KB，可缓存：大表 */
 RAM_D1 (xrw)      : ORIGIN = 0x24000000, LENGTH = 256K   /* AXI 前 256 KB，不可缓存：缓冲和队列 */
@@ -71,40 +24,31 @@ ITCM   (xrw)      : ORIGIN = 0x00000000, LENGTH = 64K
 FLASH  (rx)       : ORIGIN = 0x08000000, LENGTH = 1024K
 }
 
-/* Define output sections */
 SECTIONS
 {
-  /* The startup code goes first into FLASH */
   .isr_vector :
   {
     . = ALIGN(4);
-    KEEP(*(.isr_vector)) /* Startup code */
+    KEEP(*(.isr_vector))
     . = ALIGN(4);
   } >FLASH
 
-  /* The program code and other data goes into FLASH */
   .text :
   {
     . = ALIGN(4);
-    *(.text)           /* .text sections (code) */
-    *(.text*)          /* .text* sections (code) */
-    *(.glue_7)         /* glue arm to thumb code */
-    *(.glue_7t)        /* glue thumb to arm code */
-    *(.eh_frame)
-
+    *(.text)
+    *(.text*)
     KEEP (*(.init))
     KEEP (*(.fini))
-
     . = ALIGN(4);
-    _etext = .;        /* define a global symbols at end of code */
+    _etext = .;
   } >FLASH
 
-  /* Constant data goes into FLASH */
   .rodata :
   {
     . = ALIGN(4);
-    *(.rodata)         /* .rodata sections (constants, strings, etc.) */
-    *(.rodata*)        /* .rodata* sections (constants, strings, etc.) */
+    *(.rodata)
+    *(.rodata*)
     . = ALIGN(4);
   } >FLASH
 
@@ -147,23 +91,8 @@ SECTIONS
     _shell_command_end = .;
   } >FLASH
 
-  .ARM.extab : /* The "READONLY" keyword is only supported in GCC11 and later, remove it if using GCC10 or earlier. */
-  {
-    . = ALIGN(4);
-    *(.ARM.extab* .gnu.linkonce.armextab.*)
-    . = ALIGN(4);
-  } >FLASH
-
-  .ARM : /* The "READONLY" keyword is only supported in GCC11 and later, remove it if using GCC10 or earlier. */
-  {
-    . = ALIGN(4);
-    __exidx_start = .;
-    *(.ARM.exidx*)
-    __exidx_end = .;
-    . = ALIGN(4);
-  } >FLASH
-
-  .preinit_array : /* The "READONLY" keyword is only supported in GCC11 and later, remove it if using GCC10 or earlier. */
+  /* __libc_init_array 要这三对符号。memory_init() 是 constructor，走 .init_array */
+  .preinit_array :
   {
     . = ALIGN(4);
     PROVIDE_HIDDEN (__preinit_array_start = .);
@@ -172,7 +101,7 @@ SECTIONS
     . = ALIGN(4);
   } >FLASH
 
-  .init_array : /* The "READONLY" keyword is only supported in GCC11 and later, remove it if using GCC10 or earlier. */
+  .init_array :
   {
     . = ALIGN(4);
     PROVIDE_HIDDEN (__init_array_start = .);
@@ -182,7 +111,7 @@ SECTIONS
     . = ALIGN(4);
   } >FLASH
 
-  .fini_array : /* The "READONLY" keyword is only supported in GCC11 and later, remove it if using GCC10 or earlier. */
+  .fini_array :
   {
     . = ALIGN(4);
     PROVIDE_HIDDEN (__fini_array_start = .);
@@ -192,24 +121,21 @@ SECTIONS
     . = ALIGN(4);
   } >FLASH
 
-  /* used by the startup to initialize data */
   _sidata = LOADADDR(.data);
 
-  /* Initialized data sections goes into RAM, load LMA copy after code */
   .data :
   {
     . = ALIGN(4);
-    _sdata = .;        /* create a global symbol at data start */
-    *(.data)           /* .data sections */
-    *(.data*)          /* .data* sections */
-
+    _sdata = .;
+    *(.data)
+    *(.data*)
     . = ALIGN(4);
-    _edata = .;        /* define a global symbol at data end */
+    _edata = .;
   } >DTCM AT> FLASH
 
   /* RAM 代码：运行地址在 ITCM，加载地址在 Flash。
    * ITCM 在 0x00000000，带 64 位 ECC。memory_init() 先把整段 ITCM 用 STRD 清零，再把本段从 Flash 拷过来。
-   * 函数标 __RAM_FUNC（section .RamFunc）就会进这里。现在没有这样的函数，拷贝长度是 0。
+   * 函数标 RAM_FUNC（section .RamFunc，见 component/common/types.h）就会进这里。现在没有这样的函数，拷贝长度是 0。
    * 链接报告里的 ITCM 用量只算这段镜像，不算启动时清掉的 64 KB。 */
   _siramfunc = LOADADDR(.itcm_text);
   .itcm_text :
@@ -237,19 +163,15 @@ SECTIONS
     _esram_noncacheable = .;
   } >RAM_D1
 
-  /* Uninitialized data section */
-  . = ALIGN(4);
   .bss :
   {
-    /* This is used by the startup in order to initialize the .bss secion */
-    _sbss = .;         /* define a global symbol at bss start */
+    _sbss = .;
     __bss_start__ = _sbss;
     *(.bss)
     *(.bss*)
     *(COMMON)
-
     . = ALIGN(4);
-    _ebss = .;         /* define a global symbol at bss end */
+    _ebss = .;
     __bss_end__ = _ebss;
   } >DTCM
 
@@ -275,16 +197,10 @@ SECTIONS
     . = ALIGN(8);
   } >DTCM
 
-
-
-  /* Remove information from the standard libraries */
   /DISCARD/ :
   {
     libc.a ( * )
     libm.a ( * )
     libgcc.a ( * )
   }
-
 }
-
-

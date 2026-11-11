@@ -3,6 +3,7 @@
 #include "cdd/led/ws2812/ws2812.h"
 #include "bsp/spi/bsp_spi.h"
 #include "bsp/tick/bsp_tick.h"
+#include "osal/osal.h"
 
 /* SPI6 内核时钟 24 MHz(HSE)，分频 4 -> 6 MHz，每个 SPI 位 166.7 ns。
  * 一个 WS2812 位用一个 SPI 字节表示（1.33 us）：
@@ -150,12 +151,11 @@ bool ws2812_breath_config(uint32_t color, uint8_t min_brightness, uint8_t max_br
     {
         return false;
     }
-    uint32_t irq_state = __get_PRIMASK();
-    __disable_irq();
+    uint32_t irq_state = os_irq_save();
     breath.color = color & 0xFFFFFFu;
     breath.min_brightness = min_brightness;
     breath.max_brightness = max_brightness;
-    __set_PRIMASK(irq_state);
+    os_irq_restore(irq_state);
     return true;
 }
 
@@ -169,12 +169,11 @@ int32_t ws2812_breath_tick(void)
     uint32_t color;
     uint8_t min_brightness;
     uint8_t max_brightness;
-    uint32_t irq_state = __get_PRIMASK();
-    __disable_irq();
+    uint32_t irq_state = os_irq_save();
     color = breath.color;
     min_brightness = breath.min_brightness;
     max_brightness = breath.max_brightness;
-    __set_PRIMASK(irq_state);
+    os_irq_restore(irq_state);
 
     float phase = (float)(bsp_tick_ms() % BREATH_PERIOD_MS) / (float)BREATH_PERIOD_MS;
     float level = 0.5f + 0.5f * sinf(phase * 6.2831853f);
