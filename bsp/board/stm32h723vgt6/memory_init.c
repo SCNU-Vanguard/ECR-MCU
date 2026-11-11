@@ -1,5 +1,5 @@
 #include <string.h>
-#include "component/common/types.h"
+#include "bsp/cpu/bsp_cpu.h"
 #include "stm32h7xx.h"
 
 /* 进 main 之前做两件事（constructor 优先级 101，是用户构造函数里最先跑的）：

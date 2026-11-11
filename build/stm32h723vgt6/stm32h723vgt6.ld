@@ -135,7 +135,7 @@ SECTIONS
 
   /* RAM 代码：运行地址在 ITCM，加载地址在 Flash。
    * ITCM 在 0x00000000，带 64 位 ECC。memory_init() 先把整段 ITCM 用 STRD 清零，再把本段从 Flash 拷过来。
-   * 函数标 ITCM_FUNC（section .RamFunc，见 component/common/types.h）就会进这里。现在没有这样的函数，拷贝长度是 0。
+   * 函数标 RAM_FUNC（section .RamFunc，见 component/common/types.h）就会进这里。现在没有这样的函数，拷贝长度是 0。
    * 链接报告里的 ITCM 用量只算这段镜像，不算启动时清掉的 64 KB。 */
   _siramfunc = LOADADDR(.itcm_text);
   .itcm_text :

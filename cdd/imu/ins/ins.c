@@ -6,7 +6,7 @@
 #include <string.h>
 #include "osal/event.h"
 #include "osal/osal.h"
-#include "component/common/types.h"
+#include "bsp/cpu/bsp_cpu.h"
 #include "component/common/initcall.h"
 #include "component/common/err.h"
 #include "component/log/log.h"
