@@ -1,5 +1,5 @@
 ifeq ($(CONFIG_BSP),y)
-subdir-y += tick board/$(MCU)
+subdir-y += tick cpu board/$(MCU)
 subdir-$(CONFIG_BSP_GPIO) += gpio
 subdir-$(CONFIG_BSP_UART) += uart
 subdir-$(CONFIG_BSP_CAN) += can
