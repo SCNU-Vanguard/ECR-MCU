@@ -172,7 +172,7 @@ static int32_t bsp_can_init(void)
     for (int bus_index = 0; bus_index < CAN_NUM; bus_index++)
     {
         FDCAN_HandleTypeDef *hfdcan = board_can[bus_index];
-        /* 接收：一条"全收"的范围滤波器 -> FIFO0；其余（含远程帧）一律拒收 */
+        /* 标准帧：一条"全收"的范围滤波器 -> FIFO0。扩展帧没有硬件滤波器，不匹配的也收进 FIFO0，给 HI05R3 的 J1939。远程帧拒收。 */
         FDCAN_FilterTypeDef filter =
         {
             .IdType       = FDCAN_STANDARD_ID,
@@ -188,7 +188,7 @@ static int32_t bsp_can_init(void)
         if (can_stats[bus_index].rx_enabled)
         {
             if (HAL_FDCAN_ConfigFilter(hfdcan, &filter) != HAL_OK ||
-                HAL_FDCAN_ConfigGlobalFilter(hfdcan, FDCAN_REJECT, FDCAN_REJECT,
+                HAL_FDCAN_ConfigGlobalFilter(hfdcan, FDCAN_REJECT, FDCAN_ACCEPT_IN_RX_FIFO0,
                                              FDCAN_REJECT_REMOTE, FDCAN_REJECT_REMOTE) != HAL_OK ||
                 HAL_FDCAN_ActivateNotification(hfdcan, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0) != HAL_OK)
             {
