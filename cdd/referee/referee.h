@@ -55,7 +55,7 @@ bool referee_get_id(referee_id_t *out);             /* 本机器人 ID；还没�
 int32_t referee_send_frame(uint16_t command_id, const void *data, uint16_t length);
 
 /* 发一帧 0x0301：交互头（sender 取本机器人 ID）+ 内容。content_length 不超过 REFEREE_SEND_DATA_MAX - 6。
- * data_command_id 是 referee_interaction_id_e；UI 绘图的 receiver_id 填 client_id。还没收到本机器人 ID 时返回 ERR_BUSY。
+ * data_command_id 是 referee_interaction_id_e；UI 绘图的 receiver_id 填 client_id。还没收到本机器人 ID 时返回 ERR_NODEV（发送队列满仍是 ERR_BUSY）。
  * 0x0301 整体上行频率上限 10 Hz，这里不限速，由调用者安排 */
 int32_t referee_send_interaction(uint16_t data_command_id, uint16_t receiver_id, const void *content, uint16_t content_length);
 #endif

@@ -6,6 +6,7 @@
 #include "bsp/include/bsp_ids.h"
 #include "bsp/uart/bsp_uart.h"
 #include "component/common/initcall.h"
+#include "component/log/log.h"
 #include "component/common/err.h"
 
 static os_mutex_t output_lock;
@@ -71,9 +72,16 @@ const char *elog_port_get_t_info(void)
     return "";
 }
 
+static bool log_started;
+
 /* 初始化：INIT_COMP_STAGE1，在 BSP 的 UART（INIT_BSP_STAGE1）之后 */
 static int32_t log_init(void)
 {
+    if (log_started)
+    {
+        return ERR_OK;
+    }
+    log_started = true;
     elog_init();                                           /* 内部会调 elog_port_init() */
     for (uint8_t level = ELOG_LVL_ASSERT; level <= ELOG_LVL_VERBOSE; level++)
     {
@@ -84,3 +92,9 @@ static int32_t log_init(void)
     return ERR_OK;
 }
 INIT_COMP_STAGE1(log_init);
+
+/* 框架在 BSP 阶段失败、COMP1 没跑到时调用，保证失败信息仍能从日志输出 */
+int32_t log_ensure_started(void)
+{
+    return log_init();
+}

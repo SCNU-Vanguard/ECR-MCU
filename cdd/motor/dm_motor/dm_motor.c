@@ -34,8 +34,6 @@
 #define DM_MOTOR_MAX_STANDARD_ID      0x7FFu
 #define DM_MOTOR_KP_MAX               500.0f
 #define DM_MOTOR_KD_MAX               5.0f
-#define PI                      3.1415927f
-#define TWO_PI                  6.2831853f
 #define HYBRID_SPEED_SCALE      100.0f
 #define HYBRID_CURRENT_SCALE    10000.0f
 #define HYBRID_FIELD_MAX        10000.0f
@@ -103,13 +101,15 @@ static void update_feedback(dm_motor_t *motor, const can_event_t *event)
     {
         float position_delta = motor->position - motor->last_position;
 
-        if (position_delta > PI)
+        /* 电机上报的位置在 ±p_max 内回绕，回绕一次 = 跳变约 2*p_max，所以阈值取 p_max（半个周期）。
+         * p_max 在上位机里只能设两位小数（J4310 用 3.14 近似 pi），不能写死 pi / 2pi */
+        if (position_delta > motor->p_max)
         {
-            motor->round_count--;                           /* 反转跨过 -pi 边界 */
+            motor->round_count--;                           /* 反转跨过 -p_max 边界 */
         }
-        else if (position_delta < -PI)
+        else if (position_delta < -motor->p_max)
         {
-            motor->round_count++;                           /* 正转跨过 +pi 边界 */
+            motor->round_count++;                           /* 正转跨过 +p_max 边界 */
         }
     }
 
@@ -117,7 +117,7 @@ static void update_feedback(dm_motor_t *motor, const can_event_t *event)
     float output_position = motor->position / motor->gear_ratio;
 
     motor->base.single_angle_rad = sign * output_position;
-    motor->base.total_angle_rad = sign * (motor->position + (float)motor->round_count * TWO_PI) / motor->gear_ratio;
+    motor->base.total_angle_rad = sign * (motor->position + (float)motor->round_count * 2.0f * motor->p_max) / motor->gear_ratio;
     motor->base.speed_rad_s = sign * motor->velocity;
     motor->base.torque = sign * motor->torque_nm;
     motor->base.temperature = (float)event->data[7];

@@ -2,6 +2,7 @@
  * yaw 速度环仍用电机自己的转速。四个轮速做全向轮逆解算，自旋取负号作为速度前馈。
  * 自瞄打开且视觉锁定时跟自瞄，否则用手。手控增量来自 operate，seq 变了才加一次。
  * 失能或 IMU 无效时输出关掉。 */
+#include <string.h>
 #include "osal/period.h"
 #include "component/common/initcall.h"
 #include "component/common/err.h"
@@ -36,6 +37,7 @@ static float clamp_pitch(float angle)
     return angle;
 }
 
+#ifdef CONFIG_CDD_HOST_AIM
 static bool vision_locked(host_aim_target_t *aim)
 {
     if (host_transfer(HOST_CMD_AIM_TARGET, aim, sizeof *aim) != ERR_OK)
@@ -44,6 +46,12 @@ static bool vision_locked(host_aim_target_t *aim)
     }
     return aim->is_locked != 0u;
 }
+#else
+static bool vision_locked(void)
+{
+    return false;
+}
+#endif
 
 static bool wheel_rates(float wheel_rad_s[CHASSIS_WHEEL_COUNT])
 {
@@ -78,41 +86,54 @@ INIT_APP_STAGE2(gimbal_ctrl_init);
 
 static void gimbal_ctrl_run(void *argument)
 {
+#ifdef CONFIG_CDD_HOST_AIM
     host_aim_target_t aim;
+#endif
     float wheel_rad_s[CHASSIS_WHEEL_COUNT];
     chassis_speed_t speed;
     static uint32_t applied_seq;
+    operate_snap_t op;
     float yaw_delta_rad = 0.0f;
     float pitch_delta_rad = 0.0f;
-    uint32_t seq = 0u;
-    bool enabled = false;
-    bool use_aim = false;
+    bool enabled;
     bool locked;
     bool usable;
 
     (void)argument;
     ins_get_attitude(&gimbal_attitude);
-    (void)operate_get(OPERATE_ID_ENABLE, &enabled, sizeof enabled);
-    (void)operate_get(OPERATE_ID_AIM, &use_aim, sizeof use_aim);
-    (void)operate_get(OPERATE_ID_SEQ, &seq, sizeof seq);
-    if (seq != applied_seq)
+    /* 本拍只取一次快照，seq 与增量来自同一次发布。 */
+    if (operate_get_snapshot(&op) != ERR_OK)
     {
-        (void)operate_get(OPERATE_ID_YAW_DELTA, &yaw_delta_rad, sizeof yaw_delta_rad);
-        (void)operate_get(OPERATE_ID_PITCH_DELTA, &pitch_delta_rad, sizeof pitch_delta_rad);
-        applied_seq = seq;
+        memset(&op, 0, sizeof op);
+        op.seq = applied_seq;
     }
-    locked = use_aim && vision_locked(&aim);
+    enabled = op.enabled;
+    if (op.seq != applied_seq)
+    {
+        yaw_delta_rad = op.yaw_delta_rad;
+        pitch_delta_rad = op.pitch_delta_rad;
+        applied_seq = op.seq;
+    }
+#ifdef CONFIG_CDD_HOST_AIM
+    locked = op.use_aim && vision_locked(&aim);
+#else
+    locked = op.use_aim && vision_locked();
+#endif
     usable = enabled && gimbal_attitude.valid;
 
     yaw_rate_ff = 0.0f;
     if (usable)
     {
+#ifdef CONFIG_CDD_HOST_AIM
         if (locked)
         {
             pitch_target = clamp_pitch(aim.pitch_rad);
             yaw_target = aim.yaw_rad;
         }
         else if (!pitch_on || was_locked)
+#else
+        if (!pitch_on || was_locked)
+#endif
         {
             pitch_target = gimbal_attitude.pitch_rad;
             yaw_target = gimbal_attitude.yaw_rad;

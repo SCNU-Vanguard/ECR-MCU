@@ -1,10 +1,6 @@
 ifeq ($(CONFIG_APPL),y)
     ifeq ($(r),demo)
         subdir-$(CONFIG_APPL_DEMO) += demo
-    else ifeq ($(r),demo_gimbal)
-        subdir-$(CONFIG_APPL_DEMO_GIMBAL) += demo_gimbal
-    else ifeq ($(r),demo_chassis)
-        subdir-$(CONFIG_APPL_DEMO_CHASSIS) += demo_chassis
     else ifeq ($(r),sec_infantry)
         subdir-$(CONFIG_APPL_SEC_INFANTRY) += sec_infantry
     else ifeq ($(r),heavy_gimbal)

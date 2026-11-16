@@ -8,6 +8,7 @@
 #ifdef CONFIG_COMPONENT_LOG
 #include "osal/osal.h"
 #include "elog.h"
+int32_t log_ensure_started(void);   /* 日志还没启动（COMP1 没跑到）时补启动；已启动则什么都不做 */
 #define LOG_EL(level, fmt, ...) \
     (os_in_isr() ? (void)0 : elog_output((level), "", "", "", 0, fmt, ##__VA_ARGS__))
 #define LOGE(fmt, ...)  LOG_EL(ELOG_LVL_ERROR, fmt, ##__VA_ARGS__)

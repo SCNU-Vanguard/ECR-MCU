@@ -12,15 +12,17 @@ static bool trigger_active;
 
 static void shoot_ctrl_run(void *argument)
 {
-    bool enabled = false;
-    bool friction = false;
-    bool shoot = false;
+    operate_snap_t op = {0};
+    bool enabled;
+    bool friction;
+    bool shoot;
     int16_t friction_cmd;
 
     (void)argument;
-    (void)operate_get(OPERATE_ID_ENABLE, &enabled, sizeof enabled);
-    (void)operate_get(OPERATE_ID_FRICTION, &friction, sizeof friction);
-    (void)operate_get(OPERATE_ID_SHOOT, &shoot, sizeof shoot);
+    (void)operate_get_snapshot(&op);
+    enabled = op.enabled;
+    friction = op.friction;
+    shoot = op.shoot;
     friction_cmd = (enabled && friction) ? SHOOT_FRICTION_CMD : 0;
     dji_motor_set_cmd(&shoot_fric_0, friction_cmd);
     dji_motor_set_cmd(&shoot_fric_1, friction_cmd);

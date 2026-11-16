@@ -393,10 +393,15 @@ static void ins_run(void *argument, const uint8_t *data, uint16_t length)
     if (data == NULL)
     {
         ins_stats.timeout_count++;
+        /* 没有帧只说明数据流断了，不说明温度离开了窗口：只打断连续性、让姿态无效，不动温度闸门。
+         * 闸门只在温度出窗或温度序号停更时关闭（见下面 temperature_ready），恢复来帧后不必再等 INS_TEMP_SETTLE_US。
+         * 闸门还没开（首次上电稳温中）时仍重新计稳温时间，保持首次稳温行为 */
         have_previous_frame = false;
-        if (ins_temperature_gate_open) ins_stats.temperature_gate_reset_count++;
-        ins_temperature_gate_open = false;
-        ins_temperature_waiting = false;
+        ahrs_break_continuity(&ahrs);
+        if (!ins_temperature_gate_open)
+        {
+            ins_temperature_waiting = false;
+        }
         invalidate_attitude();
         (void)bmi088_recover();
         return;

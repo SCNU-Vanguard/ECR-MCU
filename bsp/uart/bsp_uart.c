@@ -43,7 +43,7 @@ static inline bool rx_circular(const bsp_uart_cfg_t *config)
 }
 
 /* ---------------- 接收 ---------------- */
-static void rx_start(int id)
+static int32_t rx_start(int id)
 {
     const bsp_uart_cfg_t *config = &board_uart_cfg[id];
     HAL_StatusTypeDef hal_status;
@@ -65,7 +65,9 @@ static void rx_start(int id)
     if (hal_status != HAL_OK)
     {
         uart_states[id].error_count++;
+        return ERR_IO;
     }
+    return ERR_OK;
 }
 
 static void rx_push(int id, const uint8_t *data, uint16_t length)
@@ -101,37 +103,35 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size)
 
     if (rx_circular(config))                     /* 循环：按 "上次位置 -> 当前位置" 取增量，可能绕回 */
     {
-        if (size > config->rx_size)
+        /* 不信任 size：半满事件给的是 RxXferSize/2，空闲事件给的是 HAL 当时算的值，
+         * 而且 USART 中断与其 RX DMA 中断同抢占优先级，空闲回调可能先于挂起的半满/传完回调执行。
+         * 写指针直接从 DMA 剩余计数算，回调执行顺序不影响结果。 */
+        (void)size;
+        uint32_t position = (uint32_t)config->rx_size - __HAL_DMA_GET_COUNTER(config->huart->hdmarx);
+
+        if (position >= config->rx_size)         /* 刚好写满、计数器已重装：写指针就是 0 */
         {
-            size = config->rx_size;
+            position = 0u;
         }
-        /* 传完中断已经把末尾交过，并把位置归零。紧接着的空闲中断会再报一次
-         * size == 缓冲长度。这时缓冲里没有新字节，再推一次就是把上一圈的帧重放一遍。 */
-        if (size == config->rx_size && state->last_position == 0u)
+        if (position == state->last_position)    /* 没有新字节 */
         {
             return;
         }
-        if (size == config->rx_size)
+        if (position > state->last_position)
+        {
+            rx_push(id, config->rx_buffer + state->last_position, (uint16_t)(position - state->last_position));
+        }
+        else                                     /* 写指针绕回了缓冲头 */
         {
             rx_push(id, config->rx_buffer + state->last_position, (uint16_t)(config->rx_size - state->last_position));
-            state->last_position = 0u;
-            return;
+            rx_push(id, config->rx_buffer, (uint16_t)position);
         }
-        if (size >= state->last_position)
-        {
-            rx_push(id, config->rx_buffer + state->last_position, (uint16_t)(size - state->last_position));
-        }
-        else
-        {
-            rx_push(id, config->rx_buffer + state->last_position, (uint16_t)(config->rx_size - state->last_position));
-            rx_push(id, config->rx_buffer, size);
-        }
-        state->last_position = size;
+        state->last_position = (uint16_t)position;
     }
     else                                         /* Normal / 中断：每次都是从缓冲区头开始的一段，处理完重启 */
     {
         rx_push(id, config->rx_buffer, size);
-        rx_start(id);
+        (void)rx_start(id);                      /* 失败时 rx_start 已计入 error_count */
     }
 }
 
@@ -191,9 +191,12 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
     if (tx_id >= 0)
     {
         uart_states[tx_id].error_count++;
-        if (huart->gState == HAL_UART_STATE_READY)
+        if (uart_states[tx_id].tx_busy && huart->gState == HAL_UART_STATE_READY)
         {
+            /* 发送被 HAL 中止：这一块数据已经从队列取出，丢了要记账，然后继续发队列里剩下的，否则队列会一直卡住 */
+            uart_states[tx_id].tx_drop_count += huart->TxXferSize;
             uart_states[tx_id].tx_busy = 0u;
+            tx_kick(tx_id);
         }
     }
     if (rx_id >= 0 && rx_id != tx_id)
@@ -202,7 +205,7 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
     }
     if (rx_id >= 0 && huart->RxState == HAL_UART_STATE_READY)
     {
-        rx_start(rx_id);
+        (void)rx_start(rx_id);
     }
 }
 
@@ -277,7 +280,10 @@ static int32_t bsp_uart_init(void)
                 ret = ERR_INVAL;                 /* 同一个 huart 只能启动一次接收 */
                 continue;
             }
-            rx_start(uart_index);
+            if (rx_start(uart_index) != ERR_OK)
+            {
+                ret = ERR_IO;                    /* 接收没启动起来（错误已在 rx_start 里计数） */
+            }
         }
     }
     return ret;
