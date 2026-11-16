@@ -91,12 +91,17 @@ int32_t bsp_can_send(can_id_e bus, const can_frame_t *frame)
         .MessageMarker       = 0,
     };
 
+    /* 读 TFQPI -> 写报文 RAM -> 置 TXBAR 不是原子的，同一条总线上的不同任务会互相覆盖邮箱：整体放进短临界区（HAL 内部不阻塞） */
+    uint32_t irq_key = os_irq_save();
+
     if (HAL_FDCAN_AddMessageToTxFifoQ(board_can[bus], &tx_header, (uint8_t *)frame->data) != HAL_OK)
     {
         can_stats[bus].tx_full++;
+        os_irq_restore(irq_key);
         return ERR_BUSY;
     }
     can_stats[bus].tx++;
+    os_irq_restore(irq_key);
     return ERR_OK;
 }
 

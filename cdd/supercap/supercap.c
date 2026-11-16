@@ -90,13 +90,21 @@ INIT_CDD_STAGE1(supercap_init);
 
 void supercap_enable(bool on)
 {
+    uint32_t irq_key = os_irq_save();
+
     supercap.dcdc_on = on;
+    os_irq_restore(irq_key);
 }
 
 void supercap_set_referee(uint16_t power_limit_w, uint16_t buffer_j)
 {
-    supercap.referee_power_w = clamp_power(power_limit_w);
+    uint16_t power_w = clamp_power(power_limit_w);
+    uint32_t irq_key = os_irq_save();
+
+    /* 功率和缓冲能量成对发送，必须一起更新，避免发送时读到一新一旧 */
+    supercap.referee_power_w = power_w;
     supercap.referee_buffer_j = buffer_j;
+    os_irq_restore(irq_key);
 }
 
 void supercap_get(supercap_status_t *out)
@@ -144,14 +152,35 @@ int32_t supercap_send(void)
     uint8_t clear_error;
     uint8_t restart;
 
+    /* 读 error、算控制字、改计数器放在同一个临界区（与 decode 同锁）；CAN 发送放到临界区外 */
+    uint32_t irq_key = os_irq_save();
+    uint8_t saved_clear_count = supercap.clear_count;
+    uint8_t saved_restart_count = supercap.restart_count;
+    bool dcdc_on = supercap.dcdc_on;
+    uint16_t power_w = supercap.referee_power_w;
+    uint16_t buffer_j = supercap.referee_buffer_j;
+
     recover(&clear_error, &restart);
+    os_irq_restore(irq_key);
+
     memset(frame.data, 0, sizeof frame.data);
     frame.id = SUPERCAP_TX_ID;
     frame.len = 8;
-    frame.data[0] = (uint8_t)((supercap.dcdc_on ? 0x01u : 0u) | (restart << 1) | (clear_error << 2));
-    frame.data[1] = (uint8_t)supercap.referee_power_w;
-    frame.data[2] = (uint8_t)(supercap.referee_power_w >> 8);
-    frame.data[3] = (uint8_t)supercap.referee_buffer_j;
-    frame.data[4] = (uint8_t)(supercap.referee_buffer_j >> 8);
-    return bsp_can_send(SUPERCAP_BUS, &frame);
+    frame.data[0] = (uint8_t)((dcdc_on ? 0x01u : 0u) | (restart << 1) | (clear_error << 2));
+    frame.data[1] = (uint8_t)power_w;
+    frame.data[2] = (uint8_t)(power_w >> 8);
+    frame.data[3] = (uint8_t)buffer_j;
+    frame.data[4] = (uint8_t)(buffer_j >> 8);
+
+    int32_t result = bsp_can_send(SUPERCAP_BUS, &frame);
+
+    if (result != ERR_OK)
+    {
+        /* 没发出去的帧不算数：回滚计数器，下个周期重新判断 */
+        irq_key = os_irq_save();
+        supercap.clear_count = saved_clear_count;
+        supercap.restart_count = saved_restart_count;
+        os_irq_restore(irq_key);
+    }
+    return result;
 }

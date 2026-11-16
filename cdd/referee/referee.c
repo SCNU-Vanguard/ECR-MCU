@@ -229,19 +229,25 @@ int32_t referee_send_frame(uint16_t command_id, const void *data, uint16_t lengt
 
     uint32_t frame_length = (uint32_t)length + REFEREE_FRAME_OVERHEAD;
 
-    /* 查剩余空间、取包序号、入队放在同一段关中断里。
-     * bsp_uart_write 队列不够时会只入队一部分，半帧对裁判系统只是垃圾；关中断期间别的任务插不进来 */
+    const struct __cqueue *tx_queue = &bsp_uart_state(UART_REFEREE)->tx_queue;
+
+    /* 临界区 1：先查一次空间（放不下就别白白消耗包序号），再取包序号 */
     uint32_t irq_key = os_irq_save();
 
-    if (cqueue_unused(&bsp_uart_state(UART_REFEREE)->tx_queue) < frame_length)
+    if (cqueue_unused(tx_queue) < frame_length)
     {
         os_irq_restore(irq_key);
         return ERR_BUSY;
     }
+    uint8_t sequence = tx_sequence++;
+
+    os_irq_restore(irq_key);
+
+    /* 组帧和 CRC 在临界区外做 */
     frame[0] = REFEREE_FRAME_SOF;
     frame[1] = (uint8_t)(length & 0xFFu);
     frame[2] = (uint8_t)(length >> 8);
-    frame[3] = tx_sequence++;
+    frame[3] = sequence;
     crc8_append(frame, REFEREE_HEADER_LENGTH);
     frame[5] = (uint8_t)(command_id & 0xFFu);
     frame[6] = (uint8_t)(command_id >> 8);
@@ -251,6 +257,13 @@ int32_t referee_send_frame(uint16_t command_id, const void *data, uint16_t lengt
     }
     crc16_append(frame, frame_length);
 
+    /* 临界区 2：空间可能被别的任务占了，入队前再查一次；放不下整帧就整帧丢弃，不留半帧 */
+    irq_key = os_irq_save();
+    if (cqueue_unused(tx_queue) < frame_length)
+    {
+        os_irq_restore(irq_key);
+        return ERR_BUSY;
+    }
     int32_t queued = bsp_uart_write(UART_REFEREE, frame, frame_length);
 
     os_irq_restore(irq_key);
@@ -268,7 +281,7 @@ int32_t referee_send_interaction(uint16_t data_command_id, uint16_t receiver_id,
     }
     if (!referee_get_id(&id))
     {
-        return ERR_BUSY;
+        return ERR_NODEV;       /* 本机器人 ID 还不知道，和队列满的 ERR_BUSY 区分开 */
     }
 
     referee_interaction_header_t header = { data_command_id, id.robot_id, receiver_id };

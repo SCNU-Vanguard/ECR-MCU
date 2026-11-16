@@ -6,7 +6,7 @@
 #include "cdd/buzzer/buzzer.h"
 #include "cdd/buzzer/buzzer_music.h"
 
-#define BUZZER_INIT_VOLUME 1000u /* 0..1000；1000 对应 50% 占空比，50 对应 0.125%。 */
+#define BUZZER_INIT_VOLUME 300u /* 0..1000；占空比 = 音量^2/2 ppm：1000 为 50%，300 约 4.5%，50 为 0.125%。 */
 #define BUZZER_RUN_VOLUME 200u /* 0..1000；1000 对应 50% 占空比，50 对应 0.125%。 */
 #define BUZZER_READY_INTERVAL_MS 60000u /* 两次运行提示音开始播放的间隔。 */
 static uint32_t next_ready_ms;

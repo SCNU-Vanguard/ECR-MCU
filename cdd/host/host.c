@@ -88,6 +88,17 @@ static int32_t host_send(host_slot_t *slot, const void *payload, uint8_t length)
     }
     crc16_append(frame, frame_length);
 
+    /* 整帧原子入队：空间不够就一个字节都不写，避免队列里留下半帧 */
+    if (bsp_usb_tx_free() < frame_length)
+    {
+        return ERR_BUSY;
+    }
+    if (bsp_usb_write(frame, frame_length) != (int32_t)frame_length)
+    {
+        return ERR_BUSY;
+    }
+
+    /* 整帧入队成功后才更新缓存 */
     uint32_t irq_key = os_irq_save();
 
     if (length != 0u && slot->cache != NULL)
@@ -95,16 +106,13 @@ static int32_t host_send(host_slot_t *slot, const void *payload, uint8_t length)
         memcpy(slot->cache, payload, length);
     }
     os_irq_restore(irq_key);
-
-    int32_t queued = bsp_usb_write(frame, frame_length);
-
-    return (queued == (int32_t)frame_length) ? ERR_OK : ERR_BUSY;
+    return ERR_OK;
 }
 
 static int32_t host_recv(host_slot_t *slot, void *payload, uint8_t length)
 {
     uint32_t irq_key = os_irq_save();
-    bool ok = slot->seen && (length == 0u || (payload != NULL && slot->cache != NULL));
+    bool ok = link.online && slot->seen && (length == 0u || (payload != NULL && slot->cache != NULL));
 
     if (ok && length != 0u)
     {
@@ -160,13 +168,13 @@ static void accept_frame(uint8_t command, const uint8_t *payload, uint8_t length
     host_slot_t *slot = find_packet(command);
     uint32_t irq_key = os_irq_save();
 
-    link.online = true;
     if (slot == NULL || slot->direction != HOST_RECV || length != slot->length)
     {
-        link.bad_frames++;
+        link.bad_frames++;      /* 命令未注册/方向不对/长度不符：不刷新在线状态 */
         os_irq_restore(irq_key);
         return;
     }
+    link.online = true;
     if (length != 0u && slot->cache != NULL && payload != NULL)
     {
         memcpy(slot->cache, payload, length);
@@ -230,7 +238,19 @@ static void host_run(void *argument, const uint8_t *data, uint16_t len)
     {
         uint32_t irq_key = os_irq_save();
 
-        link.online = false;
+        if (link.online)
+        {
+            link.online = false;
+            link.timeouts++;
+        }
+        /* 离线后旧数据作废：清掉所有接收槽的 seen，重新收到该命令前 host_recv 都返回 ERR_TIMEOUT */
+        for (uint8_t index = 0; index < packet_count; index++)
+        {
+            if (packets[index].direction == HOST_RECV)
+            {
+                packets[index].seen = false;
+            }
+        }
         os_irq_restore(irq_key);
         stream_count = 0u;
         return;

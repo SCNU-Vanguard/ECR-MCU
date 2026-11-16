@@ -381,24 +381,24 @@ static void parse_stream(void)
 static void interboard_run(void *argument, const uint8_t *data, uint16_t len)
 {
     (void)argument;
-    if (data == NULL)
+    if (data != NULL)
     {
+        if (len > INTERBOARD_STREAM_SIZE - stream_count)
+        {
+            stream_count = 0u;
+            note_bad_frame();
+        }
+        memcpy(stream + stream_count, data, len);
+        stream_count += len;
+        parse_stream();
+    }
+    /* 老化检查每次调用都做：持续有噪声/CRC 错误字节时不会出现队列超时，不能只靠超时来老化 */
 #if defined(CONFIG_CDD_INTERBOARD_MASTER)
-        master_age();
-        try_send();
+    master_age();
+    try_send();
 #elif defined(CONFIG_CDD_INTERBOARD_SLAVE)
-        slave_age();
+    slave_age();
 #endif
-        return;
-    }
-    if (len > INTERBOARD_STREAM_SIZE - stream_count)
-    {
-        stream_count = 0u;
-        note_bad_frame();
-    }
-    memcpy(stream + stream_count, data, len);
-    stream_count += len;
-    parse_stream();
 }
 EVENT_TASK_DEFINE(interboard_task, OS_PRIORITY_HIGH, OS_STACK_MEDIUM, EVENT_QUEUE, INTERBOARD_RX_BLOCK_MAX,
                   OS_QUEUE_LEN_4, OS_TIMEOUT_10MS, interboard_run, NULL);

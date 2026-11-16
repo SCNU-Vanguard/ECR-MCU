@@ -4,7 +4,7 @@
 /* EasyLogger 配置。注意：只有本文件生效，上游 inc/elog_cfg.h 没有拷进仓库。 */
 #define ELOG_OUTPUT_ENABLE                         /* 总开关 */
 #define ELOG_OUTPUT_LVL                  ELOG_LVL_VERBOSE   /* 编译期最低输出级别 */
-#define ELOG_ASSERT_ENABLE                         /* 允许 log_a / ELOG_ASSERT */
+/* #define ELOG_ASSERT_ENABLE */                   /* 关闭：开启后 ELOG_ASSERT / assert() 失败会 while(1) 死循环；ELOG_ASSERT 展开为空 */
 #define ELOG_LINE_BUF_SIZE               256       /* 一行日志的最大长度（静态缓冲） */
 #define ELOG_LINE_NUM_MAX_LEN            5
 #define ELOG_FILTER_TAG_MAX_LEN          16

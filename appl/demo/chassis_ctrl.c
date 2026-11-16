@@ -37,15 +37,12 @@ static void wheels_set_active(bool active)
     wheels_on = active;
 }
 
-static void chassis_command(bool nav, float *forward_m_s, float *right_m_s, float *spin_rad_s)
+static void chassis_command(const operate_snap_t *op, float *forward_m_s, float *right_m_s, float *spin_rad_s)
 {
-    *forward_m_s = 0.0f;
-    *right_m_s = 0.0f;
-    *spin_rad_s = 0.0f;
-    (void)operate_get(OPERATE_ID_FORWARD, forward_m_s, sizeof *forward_m_s);
-    (void)operate_get(OPERATE_ID_RIGHT, right_m_s, sizeof *right_m_s);
-    (void)operate_get(OPERATE_ID_SPIN, spin_rad_s, sizeof *spin_rad_s);
-    if (nav)
+    *forward_m_s = op->forward_m_s;
+    *right_m_s = op->right_m_s;
+    *spin_rad_s = op->spin_rad_s;
+    if (op->use_nav)
     {
         *forward_m_s = 0.0f;
         *right_m_s = 0.0f;
@@ -138,15 +135,15 @@ static void chassis_ctrl_run(void *argument)
     float forward_m_s;
     float right_m_s;
     float spin_rad_s;
-    bool enabled = false;
-    bool nav = false;
+    operate_snap_t op = {0};
+    bool enabled;
 
     (void)argument;
-    (void)operate_get(OPERATE_ID_ENABLE, &enabled, sizeof enabled);
-    (void)operate_get(OPERATE_ID_NAV, &nav, sizeof nav);
+    (void)operate_get_snapshot(&op);
+    enabled = op.enabled;
     if (enabled)
     {
-        chassis_command(nav, &forward_m_s, &right_m_s, &spin_rad_s);
+        chassis_command(&op, &forward_m_s, &right_m_s, &spin_rad_s);
         gimbal_to_chassis(yaw_j4310.base.total_angle_rad, forward_m_s, right_m_s, &speed);
         speed.spin_rad_s = spin_rad_s;
         if (!wheels_on)

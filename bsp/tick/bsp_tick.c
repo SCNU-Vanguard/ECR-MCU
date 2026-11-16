@@ -5,6 +5,7 @@
 #include "bsp/tick/bsp_tick.h"
 #include "component/common/initcall.h"
 #include "component/common/err.h"
+#include "osal/osal.h"
 #include "osal/period.h"
 
 _Static_assert(HAL_TICK_FREQ_DEFAULT == HAL_TICK_FREQ_1KHZ, "OS_TICK_HZ assumes 1 kHz HAL tick");
@@ -73,7 +74,14 @@ uint32_t bsp_tick_ms(void)
 
 void bsp_delay_ms(uint32_t delay_ms)
 {
-    HAL_Delay(delay_ms);
+    if (os_running())
+    {
+        os_delay_ms(delay_ms);               /* 调度器已启动：让出 CPU，不忙等 */
+    }
+    else
+    {
+        HAL_Delay(delay_ms);
+    }
 }
 
 uint64_t bsp_tick_us(void)

@@ -51,6 +51,16 @@ int32_t bsp_usb_write(const void *data, uint32_t len)
     return (int32_t)queued_length;
 }
 
+uint32_t bsp_usb_tx_free(void)
+{
+    /* 读下标时屏蔽中断：USB 中断里的 tx_kick 会推进 read_index */
+    uint32_t irq_key = os_irq_save();
+    uint32_t free_length = cqueue_unused(&tx_queue);
+
+    os_irq_restore(irq_key);
+    return free_length;
+}
+
 void bsp_usb_bind_event(struct event_task *task)
 {
     rx_event = task;

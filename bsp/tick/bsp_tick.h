@@ -3,7 +3,8 @@
 #include <stdint.h>
 /* 自启动毫秒数。基于 HAL 时基，中断/任务/调度器启动前都能调用 */
 uint32_t bsp_tick_ms(void);
-/* 忙等若干毫秒。调度器启动前也能用，BMI088 上电时序走这里，不要直接调 HAL_Delay */
+/* 延时若干毫秒。调度器启动前忙等（HAL_Delay），启动后用 os_delay_ms 让出 CPU（只能在任务里调用，不能在中断里用）。
+ * BMI088 上电时序走这里，不要直接调 HAL_Delay */
 void bsp_delay_ms(uint32_t delay_ms);
 
 /* 自启动微秒数（64 位，不回绕）。基于 DWT 周期计数器，中断/任务里都能调用，用来给传感器中断打时间戳。

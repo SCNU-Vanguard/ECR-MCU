@@ -4,10 +4,6 @@ ifeq ($(CONFIG_ROBOT),y)
     MODULE_INC += $(d)$(r)
     ifeq ($(r),demo)
         # 表在本目录的头文件里。单板不用板间。
-    else ifeq ($(r),demo_gimbal)
-        # 表在本目录的头文件里。板间帧和底盘板各写一份。
-    else ifeq ($(r),demo_chassis)
-        # 表在本目录的头文件里。板间帧和云台板各写一份。
     else ifeq ($(r),sec_infantry)
         # 表在本目录的头文件里。单板不用板间。
     else ifeq ($(r),heavy_gimbal)

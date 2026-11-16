@@ -95,7 +95,7 @@ int32_t bsp_spi_xfer_async(spi_id_e bus, gpio_id_e cs, const uint8_t *tx, uint8_
     {
         return ERR_NODEV;                                   /* CubeMX 里没给这个 SPI 配 DMA */
     }
-    if (!bsp_dma_address_ok(tx) || !bsp_dma_address_ok(rx))
+    if (!bsp_dma_address_ok(tx, len) || !bsp_dma_address_ok(rx, len))
     {
         return ERR_INVAL;                                   /* 缓冲区不在 DMA 能访问的内存里 */
     }

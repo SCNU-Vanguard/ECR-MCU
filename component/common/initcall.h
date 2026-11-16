@@ -10,11 +10,12 @@
 {
     const char *name;
     int32_t   (*fn)(void);
+    uint8_t   level;                                                                 /* 0..7，对应 8 个阶段 */
 } initcall_t;
 
 #define INITCALL(_fn, _level)                                                        \
     const initcall_t initcall_##_fn                                                  \
-        __attribute__((used, section(".initcall_" #_level ".init"))) = { #_fn, (_fn) }
+        __attribute__((used, section(".initcall_" #_level ".init"))) = { #_fn, (_fn), (_level) }
 
 /* 级别 0、1：外设驱动
  *   STAGE1：不依赖别的外设的、给后面提供通道的（uart 是日志和命令行的通道，usb）
@@ -37,6 +38,7 @@
 #define INIT_APP_STAGE1(fn)     INITCALL(fn, 6)
 #define INIT_APP_STAGE2(fn)     INITCALL(fn, 7)
 typedef void (*initcall_report_fn)(const initcall_t *call, int32_t ret);
-/* 执行整张表；返回失败个数；每个失败项调用一次 report（可为 NULL） */
+/* 按阶段执行整张表；返回失败个数；每个失败项调用一次 report（可为 NULL）。
+ * 某个阶段出现失败时，该阶段剩余项仍会执行完，但不再进入后面的阶段 */
 int32_t initcall_run_all(initcall_report_fn report);
 #endif

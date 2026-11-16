@@ -39,23 +39,6 @@ static const operate_reg_t operate_regs[] = {
 };
 #undef OPERATE_REG
 
-typedef struct
-{
-    bool     online;
-    bool     enabled;
-    float    forward_m_s;
-    float    right_m_s;
-    float    spin_rad_s;
-    bool     use_nav;
-    bool     use_aim;
-    float    yaw_delta_rad;
-    float    pitch_delta_rad;
-    uint32_t seq;
-    bool     friction;
-    bool     shoot;
-    bool     custom;
-} operate_snap_t;
-
 static operate_snap_t published;
 static uint32_t       last_frames;
 static uint64_t       frame_us;
@@ -151,6 +134,11 @@ static void note_frame(operate_snap_t *out, bool new_frame, float yaw_rate, floa
         return;
     }
     interval = frame_interval_s();
+    /* 任务被拖住或链路短暂卡顿时，间隔会很长。限幅后只积一个正常步长，避免云台一次猛转。 */
+    if (interval > OPERATE_FRAME_INTERVAL_MAX_S)
+    {
+        interval = OPERATE_FRAME_INTERVAL_MAX_S;
+    }
     out->yaw_delta_rad = yaw_rate * interval + mouse_yaw;
     out->pitch_delta_rad = pitch_rate * interval + mouse_pitch;
     out->seq = published.seq + 1u;
@@ -430,6 +418,20 @@ int32_t operate_get(unsigned id, void *buf, size_t size)
     }
     irq_key = os_irq_save();
     memcpy(buf, (const uint8_t *)&published + operate_field[id].offset, size);
+    os_irq_restore(irq_key);
+    return ERR_OK;
+}
+
+int32_t operate_get_snapshot(operate_snap_t *out)
+{
+    uint32_t irq_key;
+
+    if (out == NULL)
+    {
+        return ERR_INVAL;
+    }
+    irq_key = os_irq_save();
+    *out = published;
     os_irq_restore(irq_key);
     return ERR_OK;
 }

@@ -87,6 +87,33 @@ enum
     OPERATE_IN_COUNT
 };
 
+/* 积分用的帧间隔上限。操作任务被拖住时，停顿的整段时间不能一次积成一个云台大步长。 */
+#ifndef OPERATE_FRAME_INTERVAL_MAX_S
+#define OPERATE_FRAME_INTERVAL_MAX_S    0.05f
+#endif
+
+/* 一次发布的整份快照。字段含义见上面的寄存器说明。 */
+typedef struct
+{
+    bool     online;
+    bool     enabled;
+    float    forward_m_s;
+    float    right_m_s;
+    float    spin_rad_s;
+    bool     use_nav;
+    bool     use_aim;
+    float    yaw_delta_rad;
+    float    pitch_delta_rad;
+    uint32_t seq;
+    bool     friction;
+    bool     shoot;
+    bool     custom;
+} operate_snap_t;
+
 /* 拷出这一项。编号不存在或 size 与该项宽度不符时返回 ERR_INVAL，不写 buf。 */
 int32_t operate_get(unsigned id, void *buf, size_t size);
+
+/* 一次拷出整份快照，seq 和增量、速度、使能来自同一次发布。控制周期里应取一次再用各字段。
+ * out 为空时返回 ERR_INVAL。 */
+int32_t operate_get_snapshot(operate_snap_t *out);
 #endif

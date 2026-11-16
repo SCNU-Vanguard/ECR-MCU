@@ -158,7 +158,7 @@ static int32_t send_to_client(uint16_t data_command_id, const void *content, uin
 
     if (!referee_get_id(&id))
     {
-        return ERR_BUSY;
+        return ERR_NODEV;       /* 本机器人 ID 还不知道 */
     }
     return referee_send_interaction(data_command_id, id.client_id, content, content_length);
 }
