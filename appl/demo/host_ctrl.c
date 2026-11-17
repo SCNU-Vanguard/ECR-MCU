@@ -5,8 +5,9 @@
 #include "component/common/err.h"
 #include "cdd/host/host.h"
 #include "cdd/imu/ins/ins.h"
-#if defined(CONFIG_CDD_HOST_NAV) && defined(CONFIG_CDD_REFEREE)
 #include "cdd/referee/referee.h"
+#ifdef CONFIG_COMPONENT_SHELL
+#include "component/shell/shell_cmd.h"
 #endif
 #include "host_config.h"
 
@@ -58,7 +59,7 @@ static void host_ctrl_run(void *argument)
         host_send(HOST_CMD_AIM_ATTITUDE, &current, sizeof current);
     }
 #endif
-#if defined(CONFIG_CDD_HOST_NAV) && defined(CONFIG_CDD_REFEREE)
+#ifdef CONFIG_CDD_HOST_NAV
     {
         referee_info_t referee;
         host_nav_state_t nav;
@@ -75,8 +76,6 @@ static void host_ctrl_run(void *argument)
 PERIOD_TASK_DEFINE(host_ctrl_task, OS_FREQ_100HZ, OS_PRIORITY_LOW, OS_STACK_MEDIUM, host_ctrl_run, NULL);
 
 #ifdef CONFIG_COMPONENT_SHELL
-#include "component/shell/shell_cmd.h"
-
 #ifdef CONFIG_CDD_HOST_AIM
 static void print_deg(const char *label, float radian)
 {

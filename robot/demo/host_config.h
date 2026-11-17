@@ -11,9 +11,11 @@
 
 #define HOST_PAYLOAD_MAX  32u
 
+_Static_assert(HOST_PAYLOAD_MAX <= 255u, "host payload length field is 1 byte");
+
 #ifdef CONFIG_CDD_HOST_AIM
 #define HOST_CMD_AIM_ATTITUDE  0x01u   /* 板 → 上位机：自瞄姿态 */
-#define HOST_CMD_AIM_TARGET    0x02u   /* 上位机 → 板：自瞄目标 */
+#define HOST_CMD_AIM_TARGET    0x02u   /* 上位机 → 板：自瞄目标。pitch、yaw 全为 0 时云台用手动 */
 
 typedef struct BYTE_PACKED
 {
@@ -31,6 +33,9 @@ typedef struct BYTE_PACKED
     uint8_t shoot_en;
 } host_aim_target_t;
 
+_Static_assert(sizeof(host_aim_attitude_t) <= HOST_PAYLOAD_MAX, "host_aim_attitude_t exceeds HOST_PAYLOAD_MAX");
+_Static_assert(sizeof(host_aim_target_t) <= HOST_PAYLOAD_MAX, "host_aim_target_t exceeds HOST_PAYLOAD_MAX");
+
 #define HOST_AIM_PACKETS(X)                                                    \
     X(AIM_ATTITUDE, HOST_CMD_AIM_ATTITUDE, HOST_SEND, host_aim_attitude_t)     \
     X(AIM_TARGET,   HOST_CMD_AIM_TARGET,   HOST_RECV, host_aim_target_t)
@@ -39,8 +44,8 @@ typedef struct BYTE_PACKED
 #endif
 
 #ifdef CONFIG_CDD_HOST_NAV
-#define HOST_CMD_NAV_STATE     0x03u   /* 板 → 上位机：自身血量 + 姿态 */
-#define HOST_CMD_NAV_SPEED     0x04u   /* 上位机 → 板：目标移速 */
+#define HOST_CMD_NAV_STATE     0x03u   /* 板 → 上位机：自身血量 + 姿态。血量没有来源时发 0 */
+#define HOST_CMD_NAV_SPEED     0x04u   /* 上位机 → 板：目标移速。三个分量全为 0 时底盘仍用手动速度 */
 
 typedef struct BYTE_PACKED
 {
@@ -56,6 +61,9 @@ typedef struct BYTE_PACKED
     float right_m_s;
     float spin_rad_s;
 } host_nav_speed_t;
+
+_Static_assert(sizeof(host_nav_state_t) <= HOST_PAYLOAD_MAX, "host_nav_state_t exceeds HOST_PAYLOAD_MAX");
+_Static_assert(sizeof(host_nav_speed_t) <= HOST_PAYLOAD_MAX, "host_nav_speed_t exceeds HOST_PAYLOAD_MAX");
 
 #define HOST_NAV_PACKETS(X)                                                    \
     X(NAV_STATE, HOST_CMD_NAV_STATE, HOST_SEND, host_nav_state_t)              \

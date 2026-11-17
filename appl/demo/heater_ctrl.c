@@ -8,7 +8,6 @@
 #include "component/log/log.h"
 #include "cdd/imu/bmi088/bmi088.h"
 #include "cdd/imu/heater/heater.h"
-#include "cdd/imu/ins/ins.h"
 
 #define HEATER_STALE_LIMIT_CYCLES   5u
 
@@ -58,14 +57,13 @@ static void heater_ctrl_run(void *argument)
 }
 PERIOD_TASK_DEFINE(heater_ctrl_task, OS_FREQ_10HZ, OS_PRIORITY_LOW, OS_STACK_SMALL, heater_ctrl_run, NULL);
 
+#ifdef CONFIG_COMPONENT_SHELL
+#include "component/shell/shell_cmd.h"
+
 static bool heater_input_stale(void)
 {
     return stale_cycles >= HEATER_STALE_LIMIT_CYCLES;
 }
-
-#ifdef CONFIG_COMPONENT_SHELL
-#include <stdio.h>
-#include "component/shell/shell_cmd.h"
 
 static void print_milli(const char *label, float value, const char *unit)
 {

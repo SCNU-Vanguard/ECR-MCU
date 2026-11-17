@@ -43,7 +43,8 @@ int32_t swerve_solve(const swerve_geometry_t *geometry, const chassis_speed_t *s
         wheel[wheel_index].speed_rad_s = wheel_m_s / geometry->wheel_radius_m;
         if (wheel_m_s > SWERVE_STOP_M_S)
         {
-            wheel[wheel_index].steer_rad = atan2f(right, forward);
+            /* 舵角和自旋、yaw 一致，俯视逆时针为正：轮子朝右时是负角 */
+            wheel[wheel_index].steer_rad = atan2f(-right, forward);
         }
     }
     return ERR_OK;

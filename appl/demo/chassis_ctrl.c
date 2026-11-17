@@ -1,5 +1,5 @@
 /* 底盘：CAN1 四个 m3508，全向轮，速度环。速度读 operate，前后左右是云台坐标系。
- * 导航打开时改跟上位机速度；这一拍没有速度就停，不用摇杆顶上。
+ * 导航打开且上位机给出非零速度时改跟上位机速度；上位机速度全为 0 或没收到时仍用手动速度。
  * yaw 电机多圈角度把它们旋到车体坐标。失能时输出关掉。
  * 功率只限制这四个轮。超电在 CAN2。 */
 #include <math.h>
@@ -12,6 +12,7 @@
 #include "cdd/referee/referee.h"
 #include "cdd/host/host.h"
 #include "component/power/power.h"
+#include "component/chassis/omni/omni.h"
 #include "chassis_config.h"
 #include "supercap_config.h"
 #include "power_config.h"
@@ -25,7 +26,18 @@ static dji_motor_t *const chassis_wheel[CHASSIS_WHEEL_COUNT] =
     &chassis_m3508_3,
 };
 
+/* 参与功率限制的电机，只放驱动电机。舵轮的转向电机、轮腿的关节电机不放进来。数量和轮子数无关。 */
+static motor_t *const power_motor[] =
+{
+    &chassis_m3508_0.base,
+    &chassis_m3508_1.base,
+    &chassis_m3508_2.base,
+    &chassis_m3508_3.base,
+};
+
+static const omni_geometry_t chassis_geometry = CHASSIS_GEOMETRY_INIT;
 static const power_model_t power_model = POWER_MODEL_INIT;
+static referee_info_t referee;   /* 每个控制周期只取一次，功率限制和超电同步共用 */
 static bool wheels_on;
 
 static void wheels_set_active(bool active)
@@ -37,45 +49,38 @@ static void wheels_set_active(bool active)
     wheels_on = active;
 }
 
+/* 默认用手动速度。导航打开且上位机给出了非零速度时才换成上位机速度。 */
 static void chassis_command(const operate_snap_t *op, float *forward_m_s, float *right_m_s, float *spin_rad_s)
 {
     *forward_m_s = op->forward_m_s;
     *right_m_s = op->right_m_s;
     *spin_rad_s = op->spin_rad_s;
+#ifdef CONFIG_CDD_HOST_NAV
     if (op->use_nav)
     {
-        *forward_m_s = 0.0f;
-        *right_m_s = 0.0f;
-        *spin_rad_s = 0.0f;
-#ifdef CONFIG_CDD_HOST_NAV
-        {
-            host_nav_speed_t host_nav;
+        host_nav_speed_t host_nav;
 
-            if (host_transfer(HOST_CMD_NAV_SPEED, &host_nav, sizeof host_nav) == ERR_OK)
-            {
-                *forward_m_s = host_nav.forward_m_s;
-                *right_m_s = host_nav.right_m_s;
-                *spin_rad_s = host_nav.spin_rad_s;
-            }
+        if (host_transfer(HOST_CMD_NAV_SPEED, &host_nav, sizeof host_nav) == ERR_OK &&
+            (host_nav.forward_m_s != 0.0f || host_nav.right_m_s != 0.0f || host_nav.spin_rad_s != 0.0f))
+        {
+            *forward_m_s = host_nav.forward_m_s;
+            *right_m_s = host_nav.right_m_s;
+            *spin_rad_s = host_nav.spin_rad_s;
         }
-#endif
     }
+#endif
 }
 
 static float chassis_power_limit_w(void)
 {
     power_budget_t budget = {0};
+    supercap_status_t supercap;
 
-    static referee_info_t referee;
-
-    referee_get(&referee);
     if (referee.online && referee.performance.chassis_power_limit != 0u)
     {
         budget.referee_valid = true;
         budget.referee_limit_w = (float)referee.performance.chassis_power_limit;
     }
-
-    supercap_status_t supercap;
 
     supercap_get(&supercap);
     if (supercap.online && supercap.error != SUPERCAP_ERROR_FATAL)
@@ -92,22 +97,34 @@ static float chassis_power_limit_w(void)
 
 static void chassis_power_apply(void)
 {
-    motor_t *motors[POWER_MOTOR_COUNT] =
-    {
-        &chassis_m3508_0.base,
-        &chassis_m3508_1.base,
-        &chassis_m3508_2.base,
-        &chassis_m3508_3.base,
-    };
-    power_channel_t channels[POWER_MOTOR_COUNT];
-    uint8_t index;
+    power_channel_t channels[ARRAY_SIZE(power_motor)];
 
-    for (index = 0; index < POWER_MOTOR_COUNT; index++)
+    for (uint32_t index = 0; index < ARRAY_SIZE(power_motor); index++)
     {
-        channels[index].output = &motors[index]->output;
-        channels[index].speed_rad_s = motors[index]->speed_rad_s;
+        channels[index].output = &power_motor[index]->output;
+        channels[index].speed_rad_s = power_motor[index]->speed_rad_s;
     }
-    (void)power_apply(channels, POWER_MOTOR_COUNT, &power_model, chassis_power_limit_w());
+    (void)power_apply(channels, ARRAY_SIZE(power_motor), &power_model, chassis_power_limit_w());
+}
+
+/* 裁判系统功率上限和缓冲能量只在变化时同步给超电。 */
+static void supercap_referee_sync(void)
+{
+    static uint32_t last_limit_w;
+    static uint32_t last_buffer_j;
+    uint32_t limit_w = referee.performance.chassis_power_limit;
+    uint32_t buffer_j = referee.power_heat.buffer_energy;
+
+    if (!referee.online || limit_w == 0u)
+    {
+        return;
+    }
+    if (limit_w != last_limit_w || buffer_j != last_buffer_j)
+    {
+        supercap_set_referee(limit_w, buffer_j);
+        last_limit_w = limit_w;
+        last_buffer_j = buffer_j;
+    }
 }
 
 /* 云台坐标系到车体坐标系。yaw_rad 是 yaw 电机多圈角，俯视逆时针为正，0 表示两套正前方重合。 */
@@ -140,6 +157,7 @@ static void chassis_ctrl_run(void *argument)
 
     (void)argument;
     (void)operate_get_snapshot(&op);
+    referee_get(&referee);
     enabled = op.enabled;
     if (enabled)
     {
@@ -150,11 +168,11 @@ static void chassis_ctrl_run(void *argument)
         {
             wheels_set_active(true);
         }
-        if (omni_solve(&omni, &speed, wheel_rad_s) == ERR_OK)
+        if (omni_solve(&chassis_geometry, &speed, wheel_rad_s) == ERR_OK)
         {
             for (uint32_t wheel_index = 0; wheel_index < CHASSIS_WHEEL_COUNT; wheel_index++)
             {
-                (void)motor_set_target(&chassis_wheel[wheel_index]->base, wheel_rad_s[wheel_index] * M3508_GEAR_RATIO);
+                (void)motor_set_target(&chassis_wheel[wheel_index]->base, wheel_rad_s[wheel_index] * CHASSIS_DRIVE_RATIO);
             }
         }
     }
@@ -169,15 +187,7 @@ static void chassis_ctrl_run(void *argument)
     }
     (void)motor_send_bus(CAN_BUS1);
 
-    {
-        static referee_info_t referee;
-
-        referee_get(&referee);
-        if (referee.online && referee.performance.chassis_power_limit != 0u)
-        {
-            supercap_set_referee(referee.performance.chassis_power_limit, referee.power_heat.buffer_energy);
-        }
-    }
+    supercap_referee_sync();
     (void)supercap_send();
 }
 PERIOD_TASK_DEFINE(chassis_ctrl_task, OS_FREQ_1000HZ, OS_PRIORITY_MEDIUM, OS_STACK_MEDIUM, chassis_ctrl_run, NULL);

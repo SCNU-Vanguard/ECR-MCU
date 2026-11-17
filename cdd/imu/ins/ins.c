@@ -24,8 +24,8 @@
 #endif
 
 #ifdef CONFIG_CDD_IMU_HEATER
-#define INS_TEMP_ENABLE_MIN_C       (IMU_HEATER_TARGET_C - 2.0f)
-#define INS_TEMP_ENABLE_MAX_C       (IMU_HEATER_TARGET_C + 2.0f)
+#define INS_TEMP_ENABLE_MIN_C       (HEATER_TARGET_C - 2.0f)
+#define INS_TEMP_ENABLE_MAX_C       (HEATER_TARGET_C + 2.0f)
 #define INS_TEMP_SETTLE_US          2500000u
 #endif
 #define INS_TEMP_MAX_AGE_US         500000u
