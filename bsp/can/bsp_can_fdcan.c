@@ -3,6 +3,7 @@
 #include "component/common/initcall.h"
 #include "component/common/err.h"
 #include "osal/osal.h"
+#include "component/log/log.h"
 
 typedef struct
 {
@@ -15,6 +16,8 @@ typedef struct
 static can_subscription_t subscriptions[CAN_NUM][BSP_CAN_MAX_SUBS];
 static uint8_t            subscription_counts[CAN_NUM];
 static bsp_can_stats_t    can_stats[CAN_NUM];
+static bool               can_filter_ready[CAN_NUM];
+static bool               can_start_ready[CAN_NUM];
 
 static int can_find(const FDCAN_HandleTypeDef *hfdcan)
 {
@@ -72,18 +75,19 @@ int32_t bsp_can_subscribe_event(can_id_e bus, uint32_t id_low, uint32_t id_high,
     return bsp_can_subscribe(bus, id_low, id_high, post_to_event, task);
 }
 
-int32_t bsp_can_send(can_id_e bus, const can_frame_t *frame)
+static int32_t can_send(can_id_e bus, uint32_t id, uint8_t len, const uint8_t *data, bool extended)
 {
-    if ((unsigned)bus >= CAN_NUM || frame == NULL || frame->len > 8u)
+    if ((unsigned)bus >= CAN_NUM || data == NULL || len > 8u ||
+        (extended ? id > 0x1FFFFFFFu : id > 0x7FFu))
     {
         return ERR_INVAL;
     }
     FDCAN_TxHeaderTypeDef tx_header =
     {
-        .Identifier          = frame->id,
-        .IdType              = FDCAN_STANDARD_ID,
+        .Identifier          = id,
+        .IdType              = extended ? FDCAN_EXTENDED_ID : FDCAN_STANDARD_ID,
         .TxFrameType         = FDCAN_DATA_FRAME,
-        .DataLength          = (uint32_t)frame->len,                 /* HAL 要求 FDCAN_DLC_BYTES_n（0..8 等于字节数），写进邮箱时它自己再左移 16 位 */
+        .DataLength          = (uint32_t)len,                        /* HAL 要求 FDCAN_DLC_BYTES_n（0..8 等于字节数），写进邮箱时它自己再左移 16 位 */
         .ErrorStateIndicator = FDCAN_ESI_ACTIVE,
         .BitRateSwitch       = FDCAN_BRS_OFF,
         .FDFormat            = FDCAN_CLASSIC_CAN,
@@ -94,7 +98,7 @@ int32_t bsp_can_send(can_id_e bus, const can_frame_t *frame)
     /* 读 TFQPI -> 写报文 RAM -> 置 TXBAR 不是原子的，同一条总线上的不同任务会互相覆盖邮箱：整体放进短临界区（HAL 内部不阻塞） */
     uint32_t irq_key = os_irq_save();
 
-    if (HAL_FDCAN_AddMessageToTxFifoQ(board_can[bus], &tx_header, (uint8_t *)frame->data) != HAL_OK)
+    if (HAL_FDCAN_AddMessageToTxFifoQ(board_can[bus], &tx_header, (uint8_t *)data) != HAL_OK)
     {
         can_stats[bus].tx_full++;
         os_irq_restore(irq_key);
@@ -103,6 +107,20 @@ int32_t bsp_can_send(can_id_e bus, const can_frame_t *frame)
     can_stats[bus].tx++;
     os_irq_restore(irq_key);
     return ERR_OK;
+}
+
+int32_t bsp_can_send(can_id_e bus, const can_frame_t *frame)
+{
+    if (frame == NULL)
+    {
+        return ERR_INVAL;
+    }
+    return can_send(bus, frame->id, frame->len, frame->data, false);
+}
+
+int32_t bsp_can_send_extended(can_id_e bus, uint32_t id, const uint8_t *data, uint8_t len)
+{
+    return can_send(bus, id, len, data, true);
 }
 
 const bsp_can_stats_t *bsp_can_stats(can_id_e bus)
@@ -199,13 +217,42 @@ static int32_t bsp_can_init(void)
             {
                 ret = ERR_IO;
             }
+            else
+            {
+                can_filter_ready[bus_index] = true;
+            }
         }
         if (HAL_FDCAN_ActivateNotification(hfdcan, FDCAN_IT_BUS_OFF, 0) != HAL_OK ||
             HAL_FDCAN_Start(hfdcan) != HAL_OK)
         {
             ret = ERR_IO;
         }
+        else
+        {
+            can_start_ready[bus_index] = true;
+        }
     }
     return ret;
 }
 INIT_BSP_STAGE2(bsp_can_init);
+
+static int32_t bsp_can_init_log(void)
+{
+    for (int bus_index = 0; bus_index < CAN_NUM; bus_index++)
+    {
+        if (can_start_ready[bus_index] &&
+            (!can_stats[bus_index].rx_enabled || can_filter_ready[bus_index]))
+        {
+            LOGI("fdcan%d ready, rx=%s", bus_index + 1,
+                 can_stats[bus_index].rx_enabled ? "enabled" : "disabled");
+        }
+        else
+        {
+            LOGE("fdcan%d init failed, filter=%s, start=%s", bus_index + 1,
+                 can_stats[bus_index].rx_enabled && !can_filter_ready[bus_index] ? "failed" : "ok",
+                 can_start_ready[bus_index] ? "ok" : "failed");
+        }
+    }
+    return ERR_OK;
+}
+INIT_COMP_STAGE2(bsp_can_init_log);

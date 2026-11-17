@@ -8,15 +8,15 @@
 
 /* 数据源。BMI088：SPI，配合板上加热。HI05R3：经典 CAN、1 Mbit/s、J1939，出厂节点 8。
  * HI05R3_BUS 选总线：CAN_BUS1 = FDCAN1，CAN_BUS2 = FDCAN2，CAN_BUS3 = FDCAN3。
- * 模块输出周期要设成 1000000/HI05R3_RATE_HZ 微秒（200 Hz 就是 5 ms），并打开加速度、角速度、横滚/俯仰、航向。
- * HI05R3_USE_DEVICE_ATTITUDE 为 0 时仍用 INS_ALGORITHM 解算；为 1 时直接采用模块欧拉角。 */
+ * 模块输出周期要设成 1000000/HI05R3_RATE_HZ 微秒（200 Hz 就是 5 ms），并打开加速度、角速度、四元数。
+ * HI05R3_USE_DEVICE_ATTITUDE 为 0 时仍用 INS_ALGORITHM 解算；为 1 时使用模块四元数。 */
 #define INS_IMU_BMI088                      0
 #define INS_IMU_HI05R3                      1
-#define INS_IMU                             INS_IMU_BMI088
+#define INS_IMU                             INS_IMU_HI05R3
 #define HI05R3_BUS                          CAN_BUS1
-#define HI05R3_NODE_ID                      8u
+#define HI05R3_NODE_ID                      0x0F
 #define HI05R3_RATE_HZ                      200u
-#define HI05R3_USE_DEVICE_ATTITUDE          0
+#define HI05R3_USE_DEVICE_ATTITUDE          1
 
 /* 仅在板子固定静止、做台架零偏学习时才设为 1：允许 MEKF / Mahony 在持续时间、角速度及加速度门控通过后学习零偏。
  * 正常运动使用必须为 0；小于门限的慢转无法仅靠 IMU 与零偏区分。 */

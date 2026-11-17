@@ -16,7 +16,7 @@
 #define HI05R3_BUS                          CAN_BUS1
 #define HI05R3_NODE_ID                      8u
 #define HI05R3_RATE_HZ                      200u
-#define HI05R3_USE_DEVICE_ATTITUDE          0
+#define HI05R3_USE_DEVICE_ATTITUDE          1
 
 /* 标定表，一行一个轴（X、Y、Z 顺序），列含义：
  *   加速度计 scale（无量纲） | 加速度计 offset（m/s²） | 陀螺仪 offset（rad/s）

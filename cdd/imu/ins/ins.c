@@ -1,8 +1,9 @@
 /* 惯导任务。数据源由 ins_config.h 的 INS_IMU 选择。
  * BMI088：DRDY 中断 -> SPI DMA -> 帧回调里 event_post_isr -> 本任务换算、标定、ahrs_update。
- *   超时 100 ms 没有新帧就 bmi088_recover。温度进窗口之前不开始解算。
- * HI05R3：CAN1 收 J1939，角速度报文到达时拼成一帧。USE_DEVICE_ATTITUDE 为 0 时同样走 ahrs_update，为 1 时直接用模块欧拉角。
+ *   超时 100 ms 没有新帧就 bmi088_recover。启用加热时，温度进窗口之前不开始解算。
+ * HI05R3：CAN1 收 J1939。USE_DEVICE_ATTITUDE 为 0 时由角速度帧驱动 ahrs_update，为 1 时等三类帧齐备后使用模块四元数。
  * shell：ins_info 看姿态和统计，ins_imu 看最近一帧物理量。 */
+#include <math.h>
 #include <string.h>
 #include "osal/event.h"
 #include "osal/osal.h"
@@ -42,10 +43,12 @@
 #error "INS_ASSUME_STATIONARY must be 0 or 1"
 #endif
 
+#ifdef CONFIG_CDD_IMU_HEATER
 #define INS_TEMP_ENABLE_MIN_C       (HEATER_TARGET_C - 2.0f)
 #define INS_TEMP_ENABLE_MAX_C       (HEATER_TARGET_C + 2.0f)
 #define INS_TEMP_SETTLE_US          2500000u
 #define INS_TEMP_MAX_AGE_US         500000u
+#endif
 
 /* 加速度计样本比陀螺仪样本旧过这么多就认为过期，这一拍加速度计不参与校正（只用陀螺积分）：两个加速度计周期 + 1 ms */
 #define INS_ACCEL_MAX_AGE_US        (2u * BMI088_ACCEL_SAMPLE_PERIOD_US + 1000u)
@@ -87,19 +90,6 @@ static bool device_yaw_ready;
 static float device_last_yaw;
 #endif
 
-#if INS_IMU == INS_IMU_BMI088
-static bool ins_temperature_in_range(int16_t temperature_raw)
-{
-    const float temperature_c = 0.125f * (float)temperature_raw + 23.0f;
-    return temperature_c >= INS_TEMP_ENABLE_MIN_C && temperature_c <= INS_TEMP_ENABLE_MAX_C;
-}
-
-static bool ins_temperature_settled(uint32_t gyro_timestamp_us)
-{
-    return (uint32_t)(gyro_timestamp_us - ins_temperature_ready_since_us) >= INS_TEMP_SETTLE_US;
-}
-#endif
-
 /* 在 publish_version 写入区间内调用，只清除姿态，不影响传感器快照。 */
 static void clear_attitude(void)
 {
@@ -109,6 +99,8 @@ static void clear_attitude(void)
     published_attitude.pitch_rad = 0.0f;
     published_attitude.yaw_rad = 0.0f;
     published_attitude.yaw_total_rad = 0.0f;
+    published_attitude.inclinometer_x_rad = 0.0f;
+    published_attitude.inclinometer_valid = false;
     published_attitude.update_count = 0u;
     published_attitude.ins_cost_time = 0u;
 }
@@ -240,27 +232,67 @@ void ins_get_attitude(ins_attitude_t *attitude)
 
 #if INS_IMU == INS_IMU_HI05R3
 #if HI05R3_USE_DEVICE_ATTITUDE
-static void publish_device_attitude(const hi05r3_frame_t *frame, uint32_t frame_begin_cycles)
+static void publish_device_attitude(const hi05r3_frame_t *frame)
 {
+    float quat[4];
+    float roll_rad = 0.0f;
+    float pitch_rad = 0.0f;
+    float yaw_rad = 0.0f;
+    bool attitude_valid = frame->attitude_valid && frame->quat_from_device;
+
+    if (attitude_valid)
+    {
+        float norm2 = 0.0f;
+
+        for (uint32_t index = 0u; index < 4u; index++)
+        {
+            norm2 += frame->quat[index] * frame->quat[index];
+        }
+        attitude_valid = norm2 > 0.25f && norm2 < 4.0f;
+        if (attitude_valid)
+        {
+            const float inv_norm = 1.0f / sqrtf(norm2);
+
+            for (uint32_t index = 0u; index < 4u; index++)
+            {
+                quat[index] = frame->quat[index] * inv_norm;
+            }
+            const float w = quat[0], x = quat[1], y = quat[2], z = quat[3];
+            float sin_pitch = 2.0f * (w * y - z * x);
+
+            if (sin_pitch > 1.0f) sin_pitch = 1.0f;
+            if (sin_pitch < -1.0f) sin_pitch = -1.0f;
+            roll_rad = atan2f(2.0f * (w * x + y * z), 1.0f - 2.0f * (x * x + y * y));
+            pitch_rad = asinf(sin_pitch);
+            yaw_rad = atan2f(2.0f * (w * z + x * y), 1.0f - 2.0f * (y * y + z * z));
+        }
+    }
+
+    /* 临界保护，防止出现任务打断了姿态写入，导致姿态更新出现错误 */
     publish_version++;
-    os_memory_barrier();
+    DMB();
+
+    /**********************************************************************************************/
     memcpy(published_attitude.gyro_rad_s, frame->gyro_rad_s, sizeof published_attitude.gyro_rad_s);
     memcpy(published_attitude.accel_m_s2, frame->accel_m_s2, sizeof published_attitude.accel_m_s2);
     published_attitude.temperature_c = frame->temperature_c;
     published_attitude.temperature_valid = frame->temperature_valid;
+    published_attitude.inclinometer_x_rad = frame->inclinometer_x_rad;
+    published_attitude.inclinometer_valid = frame->inclinometer_valid;
     published_attitude.imu_frame_count++;
-    if (frame->attitude_valid)
+    /* 仅用驱动校验过的设备四元数更新姿态。 */
+    if (attitude_valid)
     {
-        float yaw_step = frame->yaw_rad - device_last_yaw;
+        float yaw_step = yaw_rad - device_last_yaw;
 
         published_attitude.valid = true;
-        memcpy(published_attitude.quaternion, frame->quat, sizeof published_attitude.quaternion);
-        published_attitude.roll_rad = frame->roll_rad;
-        published_attitude.pitch_rad = frame->pitch_rad;
-        published_attitude.yaw_rad = frame->yaw_rad;
+        memcpy(published_attitude.quaternion, quat, sizeof published_attitude.quaternion);
+        published_attitude.roll_rad = roll_rad;
+        published_attitude.pitch_rad = pitch_rad;
+        published_attitude.yaw_rad = yaw_rad;
         if (!device_yaw_ready)
         {
-            published_attitude.yaw_total_rad = frame->yaw_rad;
+            published_attitude.yaw_total_rad = yaw_rad;
             device_yaw_ready = true;
         }
         else
@@ -275,12 +307,19 @@ static void publish_device_attitude(const hi05r3_frame_t *frame, uint32_t frame_
             }
             published_attitude.yaw_total_rad += yaw_step;
         }
-        device_last_yaw = frame->yaw_rad;
+        device_last_yaw = yaw_rad;
         published_attitude.update_count++;
-        const uint32_t frame_end_cycles = bsp_cycle_count();
-        published_attitude.ins_cost_time = (uint32_t)((uint64_t)(frame_end_cycles - frame_begin_cycles) * 1000000u / bsp_cycle_freq_hz());
+        published_attitude.ins_cost_time = frame->communication_time_us;
     }
-    os_memory_barrier();
+    else
+    {
+        clear_attitude();
+        device_yaw_ready = false;
+    }
+    /**************************************************************************************************************************************/
+
+    /* 释放临界保护 */
+    DMB();
     publish_version++;
 }
 #endif
@@ -304,7 +343,9 @@ static void ins_run(void *argument, const uint8_t *data, uint16_t length)
     {
         return;
     }
+#if HI05R3_USE_DEVICE_ATTITUDE == 0
     const uint32_t frame_begin_cycles = bsp_cycle_count();
+#endif
     memcpy(&frame, data, sizeof frame);
     ins_stats.frame_count++;
 
@@ -326,7 +367,7 @@ static void ins_run(void *argument, const uint8_t *data, uint16_t length)
     previous_gyro_sequence = frame.sequence;
     ins_stats.last_dt_s = dt_s;
 #if HI05R3_USE_DEVICE_ATTITUDE
-    publish_device_attitude(&frame, frame_begin_cycles);
+    publish_device_attitude(&frame);
 #else
     bmi088_sample_t sample = { 0 };
     ahrs_sample_t ahrs_sample;
@@ -381,7 +422,7 @@ static int32_t ins_init(void)
     }
 #endif
     hi05r3_set_frame_callback(ins_on_frame, NULL);
-    return hi05r3_start();
+    return ERR_OK;
 }
 #else
 static void ins_run(void *argument, const uint8_t *data, uint16_t length)
@@ -438,9 +479,15 @@ static void ins_run(void *argument, const uint8_t *data, uint16_t length)
         ins_temperature_last_sequence = frame.temperature_sequence;
         ins_temperature_last_update_us = frame.gyro_timestamp_us;
     }
+#ifdef CONFIG_CDD_IMU_HEATER
+    const float temperature_c = 0.125f * (float)frame.temperature_raw + 23.0f;
     const bool temperature_ready = frame.temperature_sequence > 0u &&
                                    (uint32_t)(frame.gyro_timestamp_us - ins_temperature_last_update_us) <= INS_TEMP_MAX_AGE_US &&
-                                   ins_temperature_in_range(frame.temperature_raw);
+                                   temperature_c >= INS_TEMP_ENABLE_MIN_C && temperature_c <= INS_TEMP_ENABLE_MAX_C;
+#else
+    /* 无加热模式不依赖温度寄存器，直接启动姿态解算，但是注意要重新标定没有加热模式的零偏 */
+    const bool temperature_ready = true;
+#endif
     if (temperature_ready)
     {
         if (!ins_temperature_gate_open)
@@ -450,7 +497,13 @@ static void ins_run(void *argument, const uint8_t *data, uint16_t length)
                 ins_temperature_waiting = true;
                 ins_temperature_ready_since_us = frame.gyro_timestamp_us;
             }
-            if (ins_temperature_settled(frame.gyro_timestamp_us))
+#ifdef CONFIG_CDD_IMU_HEATER
+            const bool temperature_settled =
+                (uint32_t)(frame.gyro_timestamp_us - ins_temperature_ready_since_us) >= INS_TEMP_SETTLE_US;
+#else
+            const bool temperature_settled = true;
+#endif
+            if (temperature_settled)
             {
                 ins_temperature_gate_open = true;
                 ins_temperature_waiting = false;
@@ -579,6 +632,14 @@ static int shell_ins_info(int argc, char *argv[])
     print_milli("pitch", attitude.pitch_rad * RAD_TO_DEG, "deg");
     print_milli("yaw", attitude.yaw_rad * RAD_TO_DEG, "deg");
     print_milli("yaw_total", attitude.yaw_total_rad * RAD_TO_DEG, "deg");
+    if (attitude.inclinometer_valid)
+    {
+        print_milli("inclinometer_x", attitude.inclinometer_x_rad * RAD_TO_DEG, "deg");
+    }
+    else
+    {
+        shell_out("  inclinometer_x = unavailable\r\n");
+    }
     if (attitude.temperature_valid)
     {
         print_milli("temperature", attitude.temperature_c, "C");
@@ -588,7 +649,11 @@ static int shell_ins_info(int argc, char *argv[])
         shell_out("  temperature = unavailable\r\n");
     }
     print_milli("dt", ins_stats.last_dt_s * 1000.0f, "ms");
+#if INS_IMU == INS_IMU_HI05R3 && HI05R3_USE_DEVICE_ATTITUDE
+    shell_out("  ins_cost_time=%lu us (CAN frame receive span)\r\n", (unsigned long)attitude.ins_cost_time);
+#else
     shell_out("  ins_cost_time=%lu us (task snapshot -> output)\r\n", (unsigned long)attitude.ins_cost_time);
+#endif
     shell_out("  imu_frames=%lu frames=%lu temp_wait=%lu gate_resets=%lu gaps=%lu\r\n",
               (unsigned long)attitude.imu_frame_count, (unsigned long)ins_stats.frame_count,
               (unsigned long)ins_stats.temperature_wait_count, (unsigned long)ins_stats.temperature_gate_reset_count,
@@ -602,10 +667,11 @@ static int shell_ins_info(int argc, char *argv[])
         hi05r3_stats_t driver_stats;
 
         hi05r3_get_stats(&driver_stats);
-        shell_out("  driver: rx=%lu acc=%lu gyro=%lu rpy=%lu quat=%lu temp=%lu publish=%lu ignored=%lu\r\n",
+        shell_out("  driver: rx=%lu acc=%lu gyro=%lu rpy=%lu quat=%lu incli=%lu temp=%lu publish=%lu ignored=%lu\r\n",
                   (unsigned long)driver_stats.rx_frames, (unsigned long)driver_stats.acc_count,
                   (unsigned long)driver_stats.gyro_count, (unsigned long)driver_stats.attitude_count,
-                  (unsigned long)driver_stats.quat_count, (unsigned long)driver_stats.temperature_count,
+                  (unsigned long)driver_stats.quat_count, (unsigned long)driver_stats.inclinometer_count,
+                  (unsigned long)driver_stats.temperature_count,
                   (unsigned long)driver_stats.publish_count, (unsigned long)driver_stats.ignored_count);
     }
 #else

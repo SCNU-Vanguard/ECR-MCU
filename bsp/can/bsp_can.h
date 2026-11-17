@@ -34,6 +34,7 @@ int32_t bsp_can_subscribe_event(can_id_e bus, uint32_t id_low, uint32_t id_high,
 
 /* 发送；TX FIFO 满返回 ERR_BUSY（不排队，由调用者决定丢弃还是重试） */
 int32_t bsp_can_send(can_id_e bus, const can_frame_t *frame);
+int32_t bsp_can_send_extended(can_id_e bus, uint32_t id, const uint8_t *data, uint8_t len);
 
 typedef struct
 {

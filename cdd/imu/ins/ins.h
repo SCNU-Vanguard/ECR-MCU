@@ -15,12 +15,13 @@ typedef struct
     float yaw_total_rad;            /* 连续累计 yaw */
     float gyro_rad_s[3];            /* 标定后的角速度（机体系） */
     float accel_m_s2[3];            /* 标定后的加速度（机体系，最近一帧） */
+    float inclinometer_x_rad;       /* HI05R3 可选 X 轴倾角 */
+    bool  inclinometer_valid;
     float temperature_c;
     uint32_t imu_frame_count;       /* 已发布的陀螺仪帧数，独立于姿态更新 */
     uint32_t update_count;
-    uint32_t ins_cost_time;         /* 微秒：最近成功帧在任务内取原始数据前 -> 姿态输出完成。
-                                    * 含快照、换算/标定、检查和解算；不含此前 DRDY/DMA/排队等待。
-                                    * 区间内中断/抢占仍计入；未成功输出时保留上一有效值。 */
+    uint32_t ins_cost_time;         /* 微秒：HI05R3 设备姿态为三类 CAN 帧首帧到末帧的接收跨度；
+                                    * 其余路径为任务取原始数据前到姿态输出完成的耗时。 */
 } ins_attitude_t;
 
 void ins_get_attitude(ins_attitude_t *attitude);
