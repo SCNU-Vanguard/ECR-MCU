@@ -6,6 +6,7 @@ typedef enum
 {
     UART_REFEREE,       /* 裁判系统             */
     UART_INTERBOARD,    /* 双板通信（RS485）    */
+    UART_RS485_SENSOR,  /* 独立 RS485 传感器口 */
     UART_REMOTE,        /* DT7 遥控器           */
     UART_IMGTRANS,      /* 图传，USART1 只收    */
     UART_VOFA,          /* VOFA，USART1 只发    */

@@ -18,9 +18,9 @@
 #define HI05R3_RATE_HZ                      200u
 #define HI05R3_USE_DEVICE_ATTITUDE          1
 
-/* 仅在板子固定静止、做台架零偏学习时才设为 1：允许 MEKF / Mahony 在持续时间、角速度及加速度门控通过后学习零偏。
- * 正常运动使用必须为 0；小于门限的慢转无法仅靠 IMU 与零偏区分。 */
- #define INS_ASSUME_STATIONARY               0U
+/* 当前固定板静止测试：允许 MEKF / Mahony 在持续时间、角速度及加速度门控通过后学习零偏。
+ * 运动使用前设为 0；小于门限的慢转无法仅靠 IMU 与零偏区分。 */
+#define INS_ASSUME_STATIONARY               1U
 
 /* 标定表，一行一个轴（X、Y、Z 顺序），列含义：
  *   加速度计 scale（无量纲） | 加速度计 offset（m/s²） | 陀螺仪 offset（rad/s）

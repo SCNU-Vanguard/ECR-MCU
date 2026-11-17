@@ -8,12 +8,13 @@
 
 /* ---- UART：缓冲大小按各自数据量定（队列必须是 2 的幂） ---- */
 #ifdef CONFIG_BSP_UART
-#include "usart.h"         /* huart1/2/5/7/10 */
+#include "usart.h"         /* huart1/2/3/5/7/10 */
 #include "bsp/uart/bsp_uart.h"
 
 /*                       接收DMA缓冲  发送分块  发送队列。0 表示这个方向不分配 */
 BSP_UART_BUFFERS(referee,       256, 128,  512);
 BSP_UART_BUFFERS(interboard,    128, 128,  512);
+BSP_UART_BUFFERS(sensor,        128, 128,  256);
 BSP_UART_BUFFERS(remote,         36,   0,    0);           /* 只收 */
 BSP_UART_BUFFERS(imgtrans,      512,   0,    0);           /* 只收 */
 BSP_UART_BUFFERS(vofa,            0, 128,  512);           /* 只发 */
@@ -25,6 +26,7 @@ const bsp_uart_cfg_t board_uart_cfg[UART_NUM] =
     [UART_IMGTRANS]   = BSP_UART_CFG(imgtrans,      &huart1,  1, 0),   /* USART1 PA10。和 VOFA 共用 huart1，Cube 只初始化一次 */
     [UART_VOFA]       = BSP_UART_CFG(vofa,          &huart1,  0, 1),   /* USART1 PA9 */
     [UART_INTERBOARD] = BSP_UART_CFG(interboard,    &huart2,  1, 1),   /* USART2 PD5/PD6，PD4 硬件 DE，921600，收发都走 DMA */
+    [UART_RS485_SENSOR] = BSP_UART_CFG(sensor,      &huart3,  1, 1),   /* USART3 PD8/PD9，PB14 硬件 DE，921600 */
     [UART_REMOTE]     = BSP_UART_CFG(remote,        &huart5,  1, 0),
     [UART_REFEREE]    = BSP_UART_CFG(referee,       &huart7,  1, 1),   /* UART7 PE7/PE8，115200 */
     [UART_LOG]        = BSP_UART_CFG(log,           &huart10, 1, 1),
