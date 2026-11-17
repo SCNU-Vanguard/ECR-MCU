@@ -16,8 +16,6 @@ typedef struct
     float yaw_total_rad;            /* 连续累计 yaw */
     float gyro_rad_s[3];            /* 标定后的角速度（机体系） */
     float accel_m_s2[3];            /* 标定后的加速度（机体系，最近一帧） */
-    float inclinometer_x_rad;       /* HI05R3 可选 X 轴倾角 */
-    bool  inclinometer_valid;
     float temperature_c;
     uint32_t imu_frame_count;       /* 已发布的陀螺仪帧数，独立于姿态更新 */
     uint32_t update_count;

@@ -1,3 +1,4 @@
+#include <string.h>
 #include "cdd/imu/hi05r3/hi05r3.h"
 #include "bsp/include/bsp_ids.h"
 #include "ins_config.h"
@@ -11,9 +12,10 @@
 #error "ins_config.h must define HI05R3_BUS"
 #endif
 _Static_assert(HI05R3_BUS >= CAN_BUS1 && HI05R3_BUS < CAN_NUM, "HI05R3_BUS must be CAN_BUS1, CAN_BUS2, or CAN_BUS3");
-#if HI05R3_NODE_ID > 255u
-#error "HI05R3_NODE_ID must fit in the J1939 source address"
+#if HI05R3_NODE_ID < 1u || HI05R3_NODE_ID > 127u
+#error "HI05R3_NODE_ID must be 1..127 (same range hi05r3_set accepts)"
 #endif
+_Static_assert(HI05R3_NODE_ID != HI05R3_HOST_ADDRESS, "HI05R3 node address must differ from J1939 host address");
 #if HI05R3_RATE_HZ < 1u || HI05R3_RATE_HZ > 1000u
 #error "HI05R3_RATE_HZ must be 1..1000"
 #endif
@@ -32,15 +34,15 @@ _Static_assert(HI05R3_BUS >= CAN_BUS1 && HI05R3_BUS < CAN_NUM, "HI05R3_BUS must 
 #define PGN_TEMP                0xFF43u
 #define PGN_QUAT                0xFF46u
 #define PGN_INCLI               0xFF4Au
-#define CONFIG_RESPONSE_ID      ((J1939_PRIORITY << 26) | (0xEF00u << 8) | (0x55u << 8) | HI05R3_NODE_ID)
-#define CONFIG_REQUEST_ID       ((J1939_PRIORITY << 26) | (0xEF00u << 8) | (HI05R3_NODE_ID << 8) | 0x55u)
-#define CONFIG_CMD_READ         0x03u
-#define CONFIG_CMD_WRITE        0x06u
-#define CONFIG_CTRL_ADDR        0x0000u
-#define CONFIG_CTRL_SAVE        0x0000u
-#define CONFIG_CTRL_REBOOT      0x00FFu
-#define CONFIG_TIMEOUT_MS      100u
-#define CONFIG_FRAME_GAP_MS     10u
+/* 设备欧拉角和倾角只给调试查看（getter），不随姿态发布；样本超过这个时间就当作没有。 */
+#define DEBUG_VIEW_MAX_AGE_US        1000000u
+/* 配置帧：PGN 0xEF00（PDU1，目的地址在 PS 字段）。主机地址 0x55，模块地址 HI05R3_NODE_ID。 */
+#define CFG_RESPONSE_ID         ((J1939_PRIORITY << 26) | (0xEF00u << 8) | (HI05R3_HOST_ADDRESS << 8) | HI05R3_NODE_ID)
+#define CFG_REQUEST_ID          ((J1939_PRIORITY << 26) | (0xEF00u << 8) | (HI05R3_NODE_ID << 8) | HI05R3_HOST_ADDRESS)
+#define CFG_CMD_READ            0x03u
+#define CFG_CMD_WRITE           0x06u
+#define CFG_TIMEOUT_MS          100u
+#define CFG_FRAME_GAP_MS        10u
 /* 同一输出周期的几条报文紧挨着到，但谁先谁后不固定。放宽到 1.5 个周期，避免角速度先到时配不上刚到的姿态。 */
 #define GROUP_WINDOW_US         ((1000000u / HI05R3_RATE_HZ) * 3u / 2u)
 
@@ -48,10 +50,10 @@ typedef struct
 {
     float acc[3];
     float gyro[3];
+    float quat[4];
     float roll_rad;
     float pitch_rad;
     float yaw_rad;
-    float quat[4];
     float inclinometer_x_rad;
     float temperature_c;
     uint32_t acc_us;
@@ -108,12 +110,8 @@ static void publish(uint32_t now_us)
     {
         return;
     }
-    frame.gyro_rad_s[0] = state.gyro[0];
-    frame.gyro_rad_s[1] = state.gyro[1];
-    frame.gyro_rad_s[2] = state.gyro[2];
-    frame.accel_m_s2[0] = state.acc[0];
-    frame.accel_m_s2[1] = state.acc[1];
-    frame.accel_m_s2[2] = state.acc[2];
+    memcpy(frame.gyro_rad_s, state.gyro, sizeof frame.gyro_rad_s);
+    memcpy(frame.accel_m_s2, state.acc, sizeof frame.accel_m_s2);
     frame.temperature_c = state.temperature_c;
     frame.timestamp_us = state.gyro_us;
     frame.communication_time_us = 0u;
@@ -121,9 +119,6 @@ static void publish(uint32_t now_us)
     frame.temperature_valid = state.temperature_valid;
     frame.gyro_clipped = state.gyro_clipped;
     frame.accel_clipped = state.accel_clipped;
-    frame.inclinometer_x_rad = state.inclinometer_x_rad;
-    frame.inclinometer_valid = state.inclinometer_valid &&
-                               (uint32_t)(now_us - state.inclinometer_us) <= GROUP_WINDOW_US;
     quat_norm2 = state.quat[0] * state.quat[0] + state.quat[1] * state.quat[1] +
                  state.quat[2] * state.quat[2] + state.quat[3] * state.quat[3];
     attitude_fresh = frame.accel_fresh && quaternion_fresh && quat_norm2 > 0.25f && quat_norm2 < 4.0f;
@@ -139,11 +134,8 @@ static void publish(uint32_t now_us)
     state.stats.publish_count++;
     frame.sequence = state.stats.gyro_count;
     frame.attitude_valid = attitude_fresh;
-    frame.quat_from_device = false;
+    memset(frame.quat, 0, sizeof frame.quat);
     frame.quat[0] = 1.0f;
-    frame.quat[1] = 0.0f;
-    frame.quat[2] = 0.0f;
-    frame.quat[3] = 0.0f;
     if (attitude_fresh)
     {
         const uint32_t accel_age_us = (uint32_t)(now_us - state.acc_us);
@@ -154,11 +146,7 @@ static void publish(uint32_t now_us)
         {
             frame.communication_time_us = gyro_age_us;
         }
-        frame.quat[0] = state.quat[0];
-        frame.quat[1] = state.quat[1];
-        frame.quat[2] = state.quat[2];
-        frame.quat[3] = state.quat[3];
-        frame.quat_from_device = true;
+        memcpy(frame.quat, state.quat, sizeof frame.quat);
     }
     state.callback(&frame, state.context);
 }
@@ -174,9 +162,9 @@ static void on_can_frame(can_id_e bus, const can_frame_t *frame, void *context)
     {
         return;
     }
-    if (frame->id == CONFIG_RESPONSE_ID)
+    if (frame->id == CFG_RESPONSE_ID)
     {
-        if (frame->len >= 8u && frame->data[2] == CONFIG_CMD_READ && config_pending &&
+        if (frame->len >= 8u && frame->data[2] == CFG_CMD_READ && config_pending &&
             ((uint16_t)frame->data[0] | ((uint16_t)frame->data[1] << 8)) == config_address)
         {
             config_value = (uint16_t)frame->data[4] | ((uint16_t)frame->data[5] << 8);
@@ -244,20 +232,14 @@ static void on_can_frame(can_id_e bus, const can_frame_t *frame, void *context)
             state.stats.ignored_count++;
             return;
         }
-        for (uint32_t axis = 0u; axis < 2u; axis++)
+        for (uint32_t index = 0u; index < 2u; index++)
         {
-            const uint8_t *data = frame->data + 4u * axis;
-            int32_t raw = (int32_t)((uint32_t)data[0] | ((uint32_t)data[1] << 8) |
-                                    ((uint32_t)data[2] << 16) | ((uint32_t)data[3] << 24));
+            const uint8_t *data = frame->data + 4u * index;
+            const int32_t raw = (int32_t)((uint32_t)data[0] | ((uint32_t)data[1] << 8) |
+                                          ((uint32_t)data[2] << 16) | ((uint32_t)data[3] << 24));
+            float *angle = index == 0u ? &state.roll_rad : &state.pitch_rad;
 
-            if (axis == 0u)
-            {
-                state.roll_rad = (float)raw * MDEG_TO_RAD;
-            }
-            else
-            {
-                state.pitch_rad = (float)raw * MDEG_TO_RAD;
-            }
+            *angle = (float)raw * MDEG_TO_RAD;
         }
         state.roll_us = now_us;
         state.roll_valid = true;
@@ -270,12 +252,12 @@ static void on_can_frame(can_id_e bus, const can_frame_t *frame, void *context)
             return;
         }
         {
+            /* 8 字节时第二段是逆时针欧拉航向；只有 4 字节时是顺时针 0..360° 航向。 */
             const bool has_euler_yaw = frame->len >= 8u;
             const uint8_t *data = frame->data + (has_euler_yaw ? 4u : 0u);
-            int32_t raw = (int32_t)((uint32_t)data[0] | ((uint32_t)data[1] << 8) |
-                                    ((uint32_t)data[2] << 16) | ((uint32_t)data[3] << 24));
+            const int32_t raw = (int32_t)((uint32_t)data[0] | ((uint32_t)data[1] << 8) |
+                                          ((uint32_t)data[2] << 16) | ((uint32_t)data[3] << 24));
 
-            /* 第二段是逆时针欧拉航向；仅有第一段时为顺时针 0..360 度航向。 */
             state.yaw_rad = (has_euler_yaw ? (float)raw : -(float)raw) * MDEG_TO_RAD;
         }
         state.yaw_us = now_us;
@@ -318,8 +300,7 @@ static void on_can_frame(can_id_e bus, const can_frame_t *frame, void *context)
             state.stats.ignored_count++;
             return;
         }
-        state.inclinometer_x_rad = (float)(int32_t)((uint32_t)frame->data[0] |
-                                                   ((uint32_t)frame->data[1] << 8) |
+        state.inclinometer_x_rad = (float)(int32_t)((uint32_t)frame->data[0] | ((uint32_t)frame->data[1] << 8) |
                                                    ((uint32_t)frame->data[2] << 16) |
                                                    ((uint32_t)frame->data[3] << 24)) * MDEG_TO_RAD;
         state.inclinometer_us = now_us;
@@ -349,7 +330,7 @@ static int32_t hi05r3_init(void)
     {
         return ret;
     }
-    ret = bsp_can_subscribe(HI05R3_BUS, CONFIG_RESPONSE_ID, CONFIG_RESPONSE_ID, on_can_frame, NULL);
+    ret = bsp_can_subscribe(HI05R3_BUS, CFG_RESPONSE_ID, CFG_RESPONSE_ID, on_can_frame, NULL);
     if (ret != ERR_OK)
     {
         return ret;
@@ -367,19 +348,19 @@ static int32_t hi05r3_config_send(uint16_t address, uint8_t command, uint16_t va
         (uint8_t)(address & 0xFFu), (uint8_t)(address >> 8), command, 0u,
         (uint8_t)(value & 0xFFu), (uint8_t)(value >> 8), 0u, 0u,
     };
-    int32_t ret = bsp_can_send_extended(HI05R3_BUS, CONFIG_REQUEST_ID, data, 8u);
+    int32_t ret = bsp_can_send_extended(HI05R3_BUS, CFG_REQUEST_ID, data, 8u);
 
     /* 设备手册要求相邻配置帧至少间隔 10 ms。 */
     if (ret == ERR_OK)
     {
-        os_delay_ms(CONFIG_FRAME_GAP_MS);
+        os_delay_ms(CFG_FRAME_GAP_MS);
     }
     return ret;
 }
 
 int32_t hi05r3_set_register(uint16_t address, uint16_t value)
 {
-    if (address == CONFIG_CTRL_ADDR && value != CONFIG_CTRL_SAVE && value != CONFIG_CTRL_REBOOT)
+    if (address == HI05R3_CTRL_ADDR && value != HI05R3_CTRL_SAVE && value != HI05R3_CTRL_REBOOT)
     {
         return ERR_INVAL;
     }
@@ -389,14 +370,14 @@ int32_t hi05r3_set_register(uint16_t address, uint16_t value)
     {
         return ret;
     }
-    ret = hi05r3_config_send(address, CONFIG_CMD_WRITE, value);
+    ret = hi05r3_config_send(address, CFG_CMD_WRITE, value);
     os_mutex_unlock(&config_mutex);
     return ret;
 }
 
 int32_t hi05r3_set_read_register(uint16_t address, uint16_t *value)
 {
-    if (value == NULL || address == CONFIG_CTRL_ADDR)
+    if (value == NULL || address == HI05R3_CTRL_ADDR)
     {
         return ERR_INVAL;
     }
@@ -413,11 +394,11 @@ int32_t hi05r3_set_read_register(uint16_t address, uint16_t *value)
     config_pending = true;
     os_irq_restore(irq_key);
 
-    ret = hi05r3_config_send(address, CONFIG_CMD_READ, 0u);
+    ret = hi05r3_config_send(address, CFG_CMD_READ, 0u);
     if (ret == ERR_OK)
     {
         ret = ERR_TIMEOUT;
-        for (uint32_t elapsed = 0u; elapsed < CONFIG_TIMEOUT_MS; elapsed++)
+        for (uint32_t elapsed = 0u; elapsed < CFG_TIMEOUT_MS && ret != ERR_OK; elapsed++)
         {
             os_delay_ms(1u);
             irq_key = os_irq_save();
@@ -427,10 +408,6 @@ int32_t hi05r3_set_read_register(uint16_t address, uint16_t *value)
                 ret = ERR_OK;
             }
             os_irq_restore(irq_key);
-            if (ret == ERR_OK)
-            {
-                break;
-            }
         }
     }
     irq_key = os_irq_save();
@@ -439,6 +416,47 @@ int32_t hi05r3_set_read_register(uint16_t address, uint16_t *value)
     os_irq_restore(irq_key);
     os_mutex_unlock(&config_mutex);
     return ret;
+}
+
+bool hi05r3_get_euler(float *roll_rad, float *pitch_rad, float *yaw_rad)
+{
+    const uint32_t now_us = (uint32_t)bsp_tick_us();
+    uint32_t irq_key = os_irq_save();
+    const bool valid = state.roll_valid && state.yaw_valid &&
+                       (uint32_t)(now_us - state.roll_us) <= DEBUG_VIEW_MAX_AGE_US &&
+                       (uint32_t)(now_us - state.yaw_us) <= DEBUG_VIEW_MAX_AGE_US;
+
+    if (valid)
+    {
+        if (roll_rad != NULL)
+        {
+            *roll_rad = state.roll_rad;
+        }
+        if (pitch_rad != NULL)
+        {
+            *pitch_rad = state.pitch_rad;
+        }
+        if (yaw_rad != NULL)
+        {
+            *yaw_rad = state.yaw_rad;
+        }
+    }
+    os_irq_restore(irq_key);
+    return valid;
+}
+
+bool hi05r3_get_inclinometer(float *x_rad)
+{
+    const uint32_t now_us = (uint32_t)bsp_tick_us();
+    uint32_t irq_key = os_irq_save();
+    const bool valid = state.inclinometer_valid && (uint32_t)(now_us - state.inclinometer_us) <= DEBUG_VIEW_MAX_AGE_US;
+
+    if (valid && x_rad != NULL)
+    {
+        *x_rad = state.inclinometer_x_rad;
+    }
+    os_irq_restore(irq_key);
+    return valid;
 }
 
 void hi05r3_get_stats(hi05r3_stats_t *stats)

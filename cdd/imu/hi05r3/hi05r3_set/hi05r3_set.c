@@ -5,17 +5,12 @@
 *   对照算法组下辖的导航和视觉需求，可能需要获取一些里程计、角速度、加速度、四元数需求
 *   考虑总线上数据帧的精简，四元数会是一个更优的选择，至于电控需要的欧拉角就直接自己从四元数里获取
 */
-#include <stdlib.h>
 #include "cdd/imu/hi05r3/hi05r3.h"
 #include "component/common/err.h"
+#include "component/common/types.h"
 #include "ins_config.h"
 #include "osal/osal.h"
 
-#define HI05R3_J1939_HOST_ADDRESS        0x55u
-#define HI05R3_CTRL_SAVE                 0x0000u
-#define HI05R3_CTRL_REBOOT               0x00FFu
-
-#define HI05R3_CTRL_ADDR                 0x0000u
 #define HI05R3_PROFILE_ADDR              0x0006u
 #define HI05R3_CAN_BITRATE_ADDR          0x009Au
 #define HI05R3_CAN_NODE_ADDR             0x009Cu
@@ -35,9 +30,10 @@
 #define HI05R3_CAN_OUTPUT_DISABLED       0u
 #define HI05R3_CAN_OUTPUT_ENABLED        1u
 #define HI05R3_PERIOD_DISABLED_MS        0u
-#define HI05R3_DEFAULT_PERIOD_MS         5u
 
-_Static_assert(HI05R3_NODE_ID != HI05R3_J1939_HOST_ADDRESS, "HI05R3 node address must differ from J1939 host address");
+/* 默认输出周期和 ins_config.h 的输出频率保持一致。 */
+_Static_assert(1000u % HI05R3_RATE_HZ == 0u, "HI05R3_RATE_HZ must divide 1000 so the output period is a whole number of ms");
+#define HI05R3_DEFAULT_PERIOD_MS         (1000u / HI05R3_RATE_HZ)
 
 static int32_t hi05r3_set_write_verified(uint16_t address, uint16_t value)
 {
@@ -54,7 +50,7 @@ static int32_t hi05r3_set_write_verified(uint16_t address, uint16_t value)
         }
         break;
     case HI05R3_CAN_NODE_ADDR:
-        if (value == 0u || value > 127u || value == HI05R3_J1939_HOST_ADDRESS)
+        if (value == 0u || value > 127u || value == HI05R3_HOST_ADDRESS)
         {
             return ERR_INVAL;
         }
@@ -99,7 +95,8 @@ static int32_t hi05r3_set_write_verified(uint16_t address, uint16_t value)
     return readback == value ? ERR_OK : ERR_IO;
 }
 
-int32_t hi05r3_set_apply_default(void)
+/* 写入本兵种的默认配置并逐项读回校验，最后保存并重启模块。 */
+static int32_t hi05r3_set_apply_default(void)
 {
     static const struct
     {
@@ -119,7 +116,7 @@ int32_t hi05r3_set_apply_default(void)
     };
     int32_t ret;
 
-    for (size_t index = 0u; index < sizeof defaults / sizeof defaults[0]; index++)
+    for (size_t index = 0u; index < ARRAY_SIZE(defaults); index++)
     {
         ret = hi05r3_set_write_verified(defaults[index].address, defaults[index].value);
         if (ret != ERR_OK)
@@ -138,6 +135,7 @@ int32_t hi05r3_set_apply_default(void)
 
 #ifdef CONFIG_COMPONENT_SHELL
 #include <errno.h>
+#include <stdlib.h>
 #include <string.h>
 #include "component/shell/shell_cmd.h"
 
@@ -184,18 +182,28 @@ static int shell_hi05r3_set(int argc, char *argv[])
     if (argc == 2 && strcmp(argv[1], "default") == 0)
     {
         ret = hi05r3_set_apply_default();
-        shell_out("hi05r3_set default: %s\r\n", ret == ERR_OK ? "sent; saved and reboot requested" : "CAN send failed");
+        if (ret == ERR_OK)
+        {
+            shell_out("hi05r3_set default: saved and reboot requested\r\n");
+        }
+        else
+        {
+            shell_out("hi05r3_set default failed: %ld\r\n", (long)ret);
+        }
         return ret;
     }
     if (argc == 3 && strcmp(argv[1], "read") == 0 && hi05r3_set_parse_u16(argv[2], &value))
     {
         uint16_t readback;
+
         ret = hi05r3_set_read_register(value, &readback);
-        shell_out("hi05r3_set read 0x%04X: %s", (unsigned)value,
-                  ret == ERR_OK ? "" : "no response\r\n");
         if (ret == ERR_OK)
         {
-            shell_out("0x%04X\r\n", (unsigned)readback);
+            shell_out("hi05r3_set read 0x%04X: 0x%04X\r\n", (unsigned)value, (unsigned)readback);
+        }
+        else
+        {
+            shell_out("hi05r3_set read 0x%04X failed: %ld\r\n", (unsigned)value, (long)ret);
         }
         return ret;
     }
@@ -217,7 +225,7 @@ static int shell_hi05r3_set(int argc, char *argv[])
         shell_out("rate codes: 0=1000k, 2=500k, 3=250k, 4=125k; periods are ms, 0 disables\r\n");
         return ERR_INVAL;
     }
-    for (size_t index = 0u; index < sizeof commands / sizeof commands[0]; index++)
+    for (size_t index = 0u; index < ARRAY_SIZE(commands); index++)
     {
         if (strcmp(argv[1], commands[index].name) == 0)
         {
@@ -225,7 +233,14 @@ static int shell_hi05r3_set(int argc, char *argv[])
             break;
         }
     }
-    shell_out("hi05r3_set %s: %s\r\n", argv[1], ret == ERR_OK ? "readback verified" : "invalid value, no response, or readback mismatch");
+    if (ret == ERR_OK)
+    {
+        shell_out("hi05r3_set %s: readback verified\r\n", argv[1]);
+    }
+    else
+    {
+        shell_out("hi05r3_set %s failed: %ld (invalid value / no response / readback mismatch)\r\n", argv[1], (long)ret);
+    }
     return ret;
 }
 SHELL_CMD(hi05r3_set, shell_hi05r3_set, configure_hi05r3_over_j1939)
