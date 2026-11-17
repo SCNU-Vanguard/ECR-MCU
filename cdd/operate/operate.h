@@ -37,40 +37,9 @@
 #define OPERATE_AS_HOLD     0u
 #define OPERATE_AS_TOGGLE   1u
 
-/* 图传遥控读哪一路。键盘模式不看。这一路是遥控器上拨好的电平，按住跟着走。 */
-#define OPERATE_RC_NONE         0u
-#define OPERATE_RC_PAUSE        1u
-#define OPERATE_RC_CUSTOM_LEFT  2u
-#define OPERATE_RC_CUSTOM_RIGHT 3u
-#define OPERATE_RC_TRIGGER      4u
-#define OPERATE_RC_AIM          5u
-#define OPERATE_RC_NAV          6u
-#define OPERATE_RC_SPIN         7u
-
-/* 查询寄存器。operate_get 的 size 必须等于类型宽度。
- * FORWARD / RIGHT 是 m/s，SPIN 是 rad/s，带正负。
- * YAW_DELTA 向右为负，PITCH_DELTA 向上为正，是这一帧要转的角。
- * 图传遥控和 DT7 只取摇杆通道，角速度乘上一帧时间戳到这一帧的时间。图传键盘只加鼠标。
- * SEQ 每来一帧输入加一。seq 变了再把这份增量加上去。 */
-enum
-{
-    OPERATE_ID_ONLINE = 0,      /* bool */
-    OPERATE_ID_ENABLE,          /* bool */
-    OPERATE_ID_FORWARD,         /* float */
-    OPERATE_ID_RIGHT,           /* float */
-    OPERATE_ID_SPIN,            /* float */
-    OPERATE_ID_NAV,             /* bool */
-    OPERATE_ID_AIM,             /* bool */
-    OPERATE_ID_YAW_DELTA,       /* float */
-    OPERATE_ID_PITCH_DELTA,     /* float */
-    OPERATE_ID_SEQ,             /* uint32_t */
-    OPERATE_ID_FRICTION,        /* bool */
-    OPERATE_ID_SHOOT,           /* bool */
-    OPERATE_ID_CUSTOM,          /* bool */
-    OPERATE_ID_COUNT
-};
-
-/* 注册表的输入槽，只给 operate_config.h 的 OPERATE_REG_TABLE 用。 */
+/* 键盘映射表的输入槽，只给 operate_config.h 的 OPERATE_REG_TABLE 用，与 operate_snap_t 的字段无关。
+ * 图传遥控（OPERATE_MODE_IMGTRANS_RC）不查表，遥控量到快照字段的对应写死在 operate.c。
+ * 新增一个键控开关：加一个槽，表里加一行，operate.c 里把槽赋给快照字段。 */
 enum
 {
     OPERATE_IN_ENABLE = 0,
@@ -83,7 +52,10 @@ enum
     OPERATE_IN_BACK,
     OPERATE_IN_LEFT,
     OPERATE_IN_RIGHT,
-    OPERATE_IN_CUSTOM,
+    OPERATE_IN_CUSTOM1,
+    OPERATE_IN_CUSTOM2,
+    OPERATE_IN_CUSTOM3,
+    OPERATE_IN_CUSTOM4,
     OPERATE_IN_COUNT
 };
 
@@ -92,7 +64,11 @@ enum
 #define OPERATE_FRAME_INTERVAL_MAX_S    0.05f
 #endif
 
-/* 一次发布的整份快照。字段含义见上面的寄存器说明。 */
+/* 一次发布的整份快照，唯一的对外接口，改字段只改这里和 operate.c。
+ * forward / right 是 m/s，spin 是 rad/s，带正负。
+ * yaw_delta 向右为负，pitch_delta 向上为正，是这一帧要转的角。
+ * 图传遥控和 DT7 只取摇杆通道，角速度乘上一帧时间戳到这一帧的时间。图传键盘只加鼠标。
+ * seq 每来一帧输入加一。seq 变了再把这份增量加上去。 */
 typedef struct
 {
     bool     online;
@@ -107,11 +83,11 @@ typedef struct
     uint32_t seq;
     bool     friction;
     bool     shoot;
-    bool     custom;
+    bool     custom1;
+    bool     custom2;
+    bool     custom3;
+    bool     custom4;
 } operate_snap_t;
-
-/* 拷出这一项。编号不存在或 size 与该项宽度不符时返回 ERR_INVAL，不写 buf。 */
-int32_t operate_get(unsigned id, void *buf, size_t size);
 
 /* 一次拷出整份快照，seq 和增量、速度、使能来自同一次发布。控制周期里应取一次再用各字段。
  * out 为空时返回 ERR_INVAL。 */

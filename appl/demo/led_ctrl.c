@@ -32,9 +32,6 @@ static void led_ctrl_run(void *argument)
 {
     (void)argument;
     (void)ws2812_breath_tick();
-
-    /* 从IMU获取温度，根据IMU温度作颜色变化，温度越高越红色 */
-    // bool change_bitstatus = ws2812_breath_config();
 }
 /* 任务名 led_ctrl_task，50 Hz，最低优先级，小栈 */
 PERIOD_TASK_DEFINE(led_ctrl_task, OS_FREQ_50HZ, OS_PRIORITY_LOWEST, OS_STACK_SMALL, led_ctrl_run, NULL);

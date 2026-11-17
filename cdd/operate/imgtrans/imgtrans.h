@@ -15,7 +15,7 @@ typedef struct
     uint8_t  gear;          /* bit0 自瞄，bit1 导航 */
     uint8_t  pause;         /* 电平 */
     uint8_t  custom_left;   /* 电平 */
-    uint8_t  custom_right;  /* 电平 */
+    uint8_t  custom[4];     /* 电平。[0] 自定义右 frame[8] bit0；[1..3] 原保留位 frame[9] bit5..7，只有模拟遥控器会置 1 */
     uint8_t  trigger;       /* 电平 */
     int16_t  mouse_x;
     int16_t  mouse_y;

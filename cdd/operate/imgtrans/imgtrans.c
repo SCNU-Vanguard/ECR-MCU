@@ -40,7 +40,10 @@ bool imgtrans_parse(const uint8_t *frame, imgtrans_data_t *out)
     out->gear = (uint8_t)((frame[7] >> 4) & 0x03u);
     out->pause = (uint8_t)((frame[7] >> 6) & 0x01u);
     out->custom_left = (uint8_t)((frame[7] >> 7) & 0x01u);
-    out->custom_right = (uint8_t)(frame[8] & 0x01u);
+    out->custom[0] = (uint8_t)(frame[8] & 0x01u);
+    out->custom[1] = (uint8_t)((frame[9] >> 5) & 0x01u);
+    out->custom[2] = (uint8_t)((frame[9] >> 6) & 0x01u);
+    out->custom[3] = (uint8_t)((frame[9] >> 7) & 0x01u);
     out->trigger = (uint8_t)((frame[9] >> 4) & 0x01u);
     out->mouse_x = (int16_t)(frame[10] | (frame[11] << 8));
     out->mouse_y = (int16_t)(frame[12] | (frame[13] << 8));
@@ -174,8 +177,9 @@ static int shell_imgtrans(int argc, char *argv[])
               (unsigned long)data.bad_frames);
     shell_out("  ch=%d %d %d %d wheel=%d gear=%u pause=%u\r\n", (int)data.channel[0], (int)data.channel[1],
               (int)data.channel[2], (int)data.channel[3], (int)data.wheel, (unsigned)data.gear, (unsigned)data.pause);
-    shell_out("  custom_l=%u custom_r=%u trigger=%u key=0x%04x\r\n", (unsigned)data.custom_left,
-              (unsigned)data.custom_right, (unsigned)data.trigger, (unsigned)data.key);
+    shell_out("  custom_l=%u custom=%u %u %u %u trigger=%u key=0x%04x\r\n", (unsigned)data.custom_left,
+              (unsigned)data.custom[0], (unsigned)data.custom[1], (unsigned)data.custom[2],
+              (unsigned)data.custom[3], (unsigned)data.trigger, (unsigned)data.key);
     shell_out("  mouse=%d %d %d btn=%u %u %u\r\n", (int)data.mouse_x, (int)data.mouse_y, (int)data.mouse_z,
               (unsigned)data.mouse_left, (unsigned)data.mouse_right, (unsigned)data.mouse_middle);
     shell_out("  event: posted=%lu handled=%lu dropped=%lu\r\n", (unsigned long)imgtrans_task.posted,

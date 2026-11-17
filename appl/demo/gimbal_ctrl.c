@@ -1,6 +1,7 @@
 /* 云台：CAN2，pitch = gm6020，yaw = j4310。角度都用本板 IMU。
  * yaw 速度环仍用电机自己的转速。四个轮速做全向轮逆解算，自旋取负号作为速度前馈。
- * 自瞄打开且视觉锁定时跟自瞄，否则用手。手控增量来自 operate，seq 变了才加一次。
+ * 自瞄打开、视觉锁定且给出的 pitch/yaw 不全为 0 时跟自瞄，否则用手。
+ * 手控增量来自 operate，seq 变了才加一次。
  * 失能或 IMU 无效时输出关掉。 */
 #include <string.h>
 #include "osal/period.h"
@@ -10,14 +11,17 @@
 #include "cdd/imu/ins/ins.h"
 #include "cdd/motor/motor_init.h"
 #include "cdd/host/host.h"
+#include "component/chassis/omni/omni.h"
 #include "host_config.h"
 #include "chassis_config.h"
 
-#define GIMBAL_PITCH_LIMIT_RAD   0.45f
+#define GIMBAL_PITCH_MAX_RAD     0.45f    /* pitch 目标角上限 */
+#define GIMBAL_PITCH_MIN_RAD    -0.45f    /* pitch 目标角下限，和上限不必对称 */
+#define GIMBAL_PITCH_GYRO_AXIS   1u       /* ins_attitude_t.gyro_rad_s[] 里 pitch 轴的下标 */
 
+static const omni_geometry_t chassis_geometry = CHASSIS_GEOMETRY_INIT;
 static ins_attitude_t gimbal_attitude;
-static bool pitch_on;   /* 电机输出开着。关着的下一拍先对齐当前角 */
-static bool yaw_on;
+static bool gimbal_on;   /* pitch、yaw 电机输出开着。关着的下一拍先对齐当前角 */
 static bool was_locked;  /* 上一拍自瞄锁定。刚退出时先对齐当前角 */
 static float pitch_target;
 static float yaw_target;
@@ -26,29 +30,40 @@ static float yaw_rate_ff;
 
 static float clamp_pitch(float angle)
 {
-    if (angle > GIMBAL_PITCH_LIMIT_RAD)
+    if (angle > GIMBAL_PITCH_MAX_RAD)
     {
-        return GIMBAL_PITCH_LIMIT_RAD;
+        return GIMBAL_PITCH_MAX_RAD;
     }
-    if (angle < -GIMBAL_PITCH_LIMIT_RAD)
+    if (angle < GIMBAL_PITCH_MIN_RAD)
     {
-        return -GIMBAL_PITCH_LIMIT_RAD;
+        return GIMBAL_PITCH_MIN_RAD;
     }
     return angle;
 }
 
+/* 取自瞄目标。视觉已锁定且 pitch、yaw 不全为 0 才返回 true。没开 AIM 时恒为 false。 */
 #ifdef CONFIG_CDD_HOST_AIM
-static bool vision_locked(host_aim_target_t *aim)
+static bool aim_target_get(float *pitch_rad, float *yaw_rad)
 {
-    if (host_transfer(HOST_CMD_AIM_TARGET, aim, sizeof *aim) != ERR_OK)
+    host_aim_target_t aim;
+
+    if (host_transfer(HOST_CMD_AIM_TARGET, &aim, sizeof aim) != ERR_OK)
     {
         return false;
     }
-    return aim->is_locked != 0u;
+    if (aim.is_locked == 0u || (aim.pitch_rad == 0.0f && aim.yaw_rad == 0.0f))
+    {
+        return false;
+    }
+    *pitch_rad = aim.pitch_rad;
+    *yaw_rad = aim.yaw_rad;
+    return true;
 }
 #else
-static bool vision_locked(void)
+static bool aim_target_get(float *pitch_rad, float *yaw_rad)
 {
+    (void)pitch_rad;
+    (void)yaw_rad;
     return false;
 }
 #endif
@@ -69,15 +84,22 @@ static bool wheel_rates(float wheel_rad_s[CHASSIS_WHEEL_COUNT])
         {
             return false;
         }
-        wheel_rad_s[wheel_index] = wheel[wheel_index]->base.speed_rad_s / M3508_GEAR_RATIO;
+        wheel_rad_s[wheel_index] = wheel[wheel_index]->base.speed_rad_s / CHASSIS_DRIVE_RATIO;
     }
     return true;
+}
+
+static void gimbal_set_active(bool active)
+{
+    motor_set_active(&pitch_gm6020.base, active);
+    motor_set_active(&yaw_j4310.base, active);
+    gimbal_on = active;
 }
 
 static int32_t gimbal_ctrl_init(void)
 {
     motor_bind_angle_feedback(&pitch_gm6020.base, &gimbal_attitude.pitch_rad);
-    motor_bind_speed_feedback(&pitch_gm6020.base, &gimbal_attitude.gyro_rad_s[1]);
+    motor_bind_speed_feedback(&pitch_gm6020.base, &gimbal_attitude.gyro_rad_s[GIMBAL_PITCH_GYRO_AXIS]);
     motor_bind_angle_feedback(&yaw_j4310.base, &yaw_measure);
     motor_bind_speed_feedforward(&yaw_j4310.base, &yaw_rate_ff);
     return dm_motor_enable(&yaw_j4310);
@@ -86,15 +108,14 @@ INIT_APP_STAGE2(gimbal_ctrl_init);
 
 static void gimbal_ctrl_run(void *argument)
 {
-#ifdef CONFIG_CDD_HOST_AIM
-    host_aim_target_t aim;
-#endif
     float wheel_rad_s[CHASSIS_WHEEL_COUNT];
     chassis_speed_t speed;
     static uint32_t applied_seq;
     operate_snap_t op;
     float yaw_delta_rad = 0.0f;
     float pitch_delta_rad = 0.0f;
+    float aim_pitch_rad = 0.0f;
+    float aim_yaw_rad = 0.0f;
     bool enabled;
     bool locked;
     bool usable;
@@ -114,26 +135,18 @@ static void gimbal_ctrl_run(void *argument)
         pitch_delta_rad = op.pitch_delta_rad;
         applied_seq = op.seq;
     }
-#ifdef CONFIG_CDD_HOST_AIM
-    locked = op.use_aim && vision_locked(&aim);
-#else
-    locked = op.use_aim && vision_locked();
-#endif
+    locked = op.use_aim && aim_target_get(&aim_pitch_rad, &aim_yaw_rad);
     usable = enabled && gimbal_attitude.valid;
 
     yaw_rate_ff = 0.0f;
     if (usable)
     {
-#ifdef CONFIG_CDD_HOST_AIM
         if (locked)
         {
-            pitch_target = clamp_pitch(aim.pitch_rad);
-            yaw_target = aim.yaw_rad;
+            pitch_target = clamp_pitch(aim_pitch_rad);
+            yaw_target = aim_yaw_rad;
         }
-        else if (!pitch_on || was_locked)
-#else
-        if (!pitch_on || was_locked)
-#endif
+        else if (!gimbal_on || was_locked)
         {
             pitch_target = gimbal_attitude.pitch_rad;
             yaw_target = gimbal_attitude.yaw_rad;
@@ -144,35 +157,20 @@ static void gimbal_ctrl_run(void *argument)
             yaw_target += yaw_delta_rad;
         }
         yaw_measure = gimbal_attitude.yaw_rad;
-        if (wheel_rates(wheel_rad_s) && omni_inverse(&omni, wheel_rad_s, &speed) == ERR_OK)
+        if (wheel_rates(wheel_rad_s) && omni_inverse(&chassis_geometry, wheel_rad_s, &speed) == ERR_OK)
         {
             yaw_rate_ff = -speed.spin_rad_s;
         }
-        if (!pitch_on)
+        if (!gimbal_on)
         {
-            motor_set_active(&pitch_gm6020.base, true);
-            pitch_on = true;
-        }
-        if (!yaw_on)
-        {
-            motor_set_active(&yaw_j4310.base, true);
-            yaw_on = true;
+            gimbal_set_active(true);
         }
         (void)motor_set_target(&pitch_gm6020.base, pitch_target);
         (void)motor_set_target(&yaw_j4310.base, yaw_target);
     }
-    else
+    else if (gimbal_on)
     {
-        if (pitch_on)
-        {
-            motor_set_active(&pitch_gm6020.base, false);
-            pitch_on = false;
-        }
-        if (yaw_on)
-        {
-            motor_set_active(&yaw_j4310.base, false);
-            yaw_on = false;
-        }
+        gimbal_set_active(false);
     }
     was_locked = locked && usable;
 

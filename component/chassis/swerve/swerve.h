@@ -3,7 +3,7 @@
 #include "component/chassis/chassis.h"
 
 /* 四轮舵轮。每个轮心在 (±半轴距, ±半轮距)。
- * speed_rad_s 是轮端角速度，不含减速比。steer_rad 为 0 时轮子朝前，范围 (-pi, pi]。
+ * speed_rad_s 是轮端角速度，不含减速比。steer_rad 为 0 时轮子朝前，俯视逆时针为正（和自旋、yaw 一致，朝左为正），范围 (-pi, pi]。
  * 某一轮的平移速度和旋转切向速度都是 0 时，不改该轮传入的 steer_rad，只把速度写成 0，避免停车时舵角被打回 0。 */
 typedef struct
 {
