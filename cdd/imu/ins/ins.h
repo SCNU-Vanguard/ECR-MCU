@@ -7,7 +7,8 @@
 typedef struct
 {
     bool  valid;                    /* 算法已初始化并至少推进过一次 */
-    bool  temperature_valid;        /* 至少成功读取过一次温度 */
+    bool  temperature_valid;        /* BMI088 曾读到温度，或 HI05R3 曾收到可选温度帧；
+                                     * 不表示温度仍新鲜，HI05R3 姿态更新不依赖温度。 */
     float quaternion[4];            /* [w, x, y, z]，机体系 -> 固定参考坐标系 */
     float roll_rad;
     float pitch_rad;

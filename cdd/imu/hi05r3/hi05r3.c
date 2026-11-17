@@ -85,55 +85,21 @@ static volatile bool config_ready;
 static volatile uint16_t config_address;
 static volatile uint16_t config_value;
 
-static int16_t read_i16(const uint8_t *data)
-{
-    return (int16_t)((uint16_t)data[0] | ((uint16_t)data[1] << 8));
-}
-
-static int32_t read_i32(const uint8_t *data)
-{
-    return (int32_t)((uint32_t)data[0] | ((uint32_t)data[1] << 8) | ((uint32_t)data[2] << 16) | ((uint32_t)data[3] << 24));
-}
-
-static uint32_t j1939_id(uint32_t pgn)
-{
-    return (J1939_PRIORITY << 26) | ((pgn & 0x3FFFFu) << 8) | (uint32_t)(HI05R3_NODE_ID & 0xFFu);
-}
-
-static uint32_t pgn_of(uint32_t id)
-{
-    uint32_t pgn = (id >> 8) & 0x3FFFFu;
-
-    if (((pgn >> 8) & 0xFFu) < 0xF0u)
-    {
-        pgn &= 0x3FF00u;
-    }
-    return pgn;
-}
-
-static bool fresh(uint32_t now_us, uint32_t stamp_us, bool valid)
-{
-    return valid && (uint32_t)(now_us - stamp_us) <= GROUP_WINDOW_US;
-}
-
-static bool clipped3(int16_t x, int16_t y, int16_t z)
-{
-    return x >= RAW_CLIP || x <= -RAW_CLIP || y >= RAW_CLIP || y <= -RAW_CLIP || z >= RAW_CLIP || z <= -RAW_CLIP;
-}
-
 static void publish(uint32_t now_us)
 {
     hi05r3_frame_t frame;
     float quat_norm2 = 0.0f;
-    bool quaternion_fresh = fresh(now_us, state.quat_us, state.quat_valid);
+    bool quaternion_fresh = state.quat_valid && (uint32_t)(now_us - state.quat_us) <= GROUP_WINDOW_US;
     bool attitude_fresh;
 
 #if HI05R3_USE_DEVICE_ATTITUDE
+    bool accel_fresh = state.acc_valid && (uint32_t)(now_us - state.acc_us) <= GROUP_WINDOW_US;
+    bool gyro_fresh = (uint32_t)(now_us - state.gyro_us) <= GROUP_WINDOW_US;
+
     if (state.stats.acc_count == state.published_acc_count ||
         state.stats.gyro_count == state.published_gyro_count ||
         state.stats.quat_count == state.published_quat_count ||
-        !fresh(now_us, state.acc_us, state.acc_valid) ||
-        !fresh(now_us, state.gyro_us, true) || !quaternion_fresh)
+        !accel_fresh || !gyro_fresh || !quaternion_fresh)
     {
         return;
     }
@@ -151,12 +117,13 @@ static void publish(uint32_t now_us)
     frame.temperature_c = state.temperature_c;
     frame.timestamp_us = state.gyro_us;
     frame.communication_time_us = 0u;
-    frame.accel_fresh = fresh(now_us, state.acc_us, true);
+    frame.accel_fresh = (uint32_t)(now_us - state.acc_us) <= GROUP_WINDOW_US;
     frame.temperature_valid = state.temperature_valid;
     frame.gyro_clipped = state.gyro_clipped;
     frame.accel_clipped = state.accel_clipped;
     frame.inclinometer_x_rad = state.inclinometer_x_rad;
-    frame.inclinometer_valid = fresh(now_us, state.inclinometer_us, state.inclinometer_valid);
+    frame.inclinometer_valid = state.inclinometer_valid &&
+                               (uint32_t)(now_us - state.inclinometer_us) <= GROUP_WINDOW_US;
     quat_norm2 = state.quat[0] * state.quat[0] + state.quat[1] * state.quat[1] +
                  state.quat[2] * state.quat[2] + state.quat[3] * state.quat[3];
     attitude_fresh = frame.accel_fresh && quaternion_fresh && quat_norm2 > 0.25f && quat_norm2 < 4.0f;
@@ -222,7 +189,11 @@ static void on_can_frame(can_id_e bus, const can_frame_t *frame, void *context)
         return;
     }
     state.stats.rx_frames++;
-    pgn = pgn_of(frame->id);
+    pgn = (frame->id >> 8) & 0x3FFFFu;
+    if (((pgn >> 8) & 0xFFu) < 0xF0u)
+    {
+        pgn &= 0x3FF00u;
+    }
     now_us = (uint32_t)bsp_tick_us();
     switch (pgn)
     {
@@ -232,10 +203,15 @@ static void on_can_frame(can_id_e bus, const can_frame_t *frame, void *context)
             state.stats.ignored_count++;
             return;
         }
-        state.accel_clipped = clipped3(read_i16(frame->data), read_i16(frame->data + 2), read_i16(frame->data + 4));
-        state.acc[0] = (float)read_i16(frame->data) * ACC_LSB_M_S2;
-        state.acc[1] = (float)read_i16(frame->data + 2) * ACC_LSB_M_S2;
-        state.acc[2] = (float)read_i16(frame->data + 4) * ACC_LSB_M_S2;
+        state.accel_clipped = false;
+        for (uint32_t axis = 0u; axis < 3u; axis++)
+        {
+            const uint8_t *data = frame->data + 2u * axis;
+            int16_t raw = (int16_t)((uint16_t)data[0] | ((uint16_t)data[1] << 8));
+
+            state.acc[axis] = (float)raw * ACC_LSB_M_S2;
+            state.accel_clipped |= raw >= RAW_CLIP || raw <= -RAW_CLIP;
+        }
         state.acc_us = now_us;
         state.acc_valid = true;
         state.stats.acc_count++;
@@ -249,10 +225,15 @@ static void on_can_frame(can_id_e bus, const can_frame_t *frame, void *context)
             state.stats.ignored_count++;
             return;
         }
-        state.gyro_clipped = clipped3(read_i16(frame->data), read_i16(frame->data + 2), read_i16(frame->data + 4));
-        state.gyro[0] = (float)read_i16(frame->data) * GYR_LSB_RAD_S;
-        state.gyro[1] = (float)read_i16(frame->data + 2) * GYR_LSB_RAD_S;
-        state.gyro[2] = (float)read_i16(frame->data + 4) * GYR_LSB_RAD_S;
+        state.gyro_clipped = false;
+        for (uint32_t axis = 0u; axis < 3u; axis++)
+        {
+            const uint8_t *data = frame->data + 2u * axis;
+            int16_t raw = (int16_t)((uint16_t)data[0] | ((uint16_t)data[1] << 8));
+
+            state.gyro[axis] = (float)raw * GYR_LSB_RAD_S;
+            state.gyro_clipped |= raw >= RAW_CLIP || raw <= -RAW_CLIP;
+        }
         state.gyro_us = now_us;
         state.stats.gyro_count++;
         publish(now_us);
@@ -263,8 +244,21 @@ static void on_can_frame(can_id_e bus, const can_frame_t *frame, void *context)
             state.stats.ignored_count++;
             return;
         }
-        state.roll_rad = (float)read_i32(frame->data) * MDEG_TO_RAD;
-        state.pitch_rad = (float)read_i32(frame->data + 4) * MDEG_TO_RAD;
+        for (uint32_t axis = 0u; axis < 2u; axis++)
+        {
+            const uint8_t *data = frame->data + 4u * axis;
+            int32_t raw = (int32_t)((uint32_t)data[0] | ((uint32_t)data[1] << 8) |
+                                    ((uint32_t)data[2] << 16) | ((uint32_t)data[3] << 24));
+
+            if (axis == 0u)
+            {
+                state.roll_rad = (float)raw * MDEG_TO_RAD;
+            }
+            else
+            {
+                state.pitch_rad = (float)raw * MDEG_TO_RAD;
+            }
+        }
         state.roll_us = now_us;
         state.roll_valid = true;
         state.stats.attitude_count++;
@@ -275,13 +269,14 @@ static void on_can_frame(can_id_e bus, const can_frame_t *frame, void *context)
             state.stats.ignored_count++;
             return;
         }
-        if (frame->len >= 8u)
         {
-            state.yaw_rad = (float)read_i32(frame->data + 4) * MDEG_TO_RAD; /* 第二段是设备欧拉航向，逆时针 */
-        }
-        else
-        {
-            state.yaw_rad = -(float)read_i32(frame->data) * MDEG_TO_RAD;    /* 只有顺时针 0..360° 航向 */
+            const bool has_euler_yaw = frame->len >= 8u;
+            const uint8_t *data = frame->data + (has_euler_yaw ? 4u : 0u);
+            int32_t raw = (int32_t)((uint32_t)data[0] | ((uint32_t)data[1] << 8) |
+                                    ((uint32_t)data[2] << 16) | ((uint32_t)data[3] << 24));
+
+            /* 第二段是逆时针欧拉航向；仅有第一段时为顺时针 0..360 度航向。 */
+            state.yaw_rad = (has_euler_yaw ? (float)raw : -(float)raw) * MDEG_TO_RAD;
         }
         state.yaw_us = now_us;
         state.yaw_valid = true;
@@ -292,7 +287,8 @@ static void on_can_frame(can_id_e bus, const can_frame_t *frame, void *context)
             state.stats.ignored_count++;
             return;
         }
-        state.temperature_c = (float)read_i16(frame->data) * 0.01f;
+        state.temperature_c = (float)(int16_t)((uint16_t)frame->data[0] |
+                                               ((uint16_t)frame->data[1] << 8)) * 0.01f;
         state.temperature_valid = true;
         state.stats.temperature_count++;
         break;
@@ -302,10 +298,13 @@ static void on_can_frame(can_id_e bus, const can_frame_t *frame, void *context)
             state.stats.ignored_count++;
             return;
         }
-        state.quat[0] = (float)read_i16(frame->data) * QUAT_LSB;
-        state.quat[1] = (float)read_i16(frame->data + 2) * QUAT_LSB;
-        state.quat[2] = (float)read_i16(frame->data + 4) * QUAT_LSB;
-        state.quat[3] = (float)read_i16(frame->data + 6) * QUAT_LSB;
+        for (uint32_t index = 0u; index < 4u; index++)
+        {
+            const uint8_t *data = frame->data + 2u * index;
+            int16_t raw = (int16_t)((uint16_t)data[0] | ((uint16_t)data[1] << 8));
+
+            state.quat[index] = (float)raw * QUAT_LSB;
+        }
         state.quat_us = now_us;
         state.quat_valid = true;
         state.stats.quat_count++;
@@ -319,7 +318,10 @@ static void on_can_frame(can_id_e bus, const can_frame_t *frame, void *context)
             state.stats.ignored_count++;
             return;
         }
-        state.inclinometer_x_rad = (float)read_i32(frame->data) * MDEG_TO_RAD;
+        state.inclinometer_x_rad = (float)(int32_t)((uint32_t)frame->data[0] |
+                                                   ((uint32_t)frame->data[1] << 8) |
+                                                   ((uint32_t)frame->data[2] << 16) |
+                                                   ((uint32_t)frame->data[3] << 24)) * MDEG_TO_RAD;
         state.inclinometer_us = now_us;
         state.inclinometer_valid = true;
         state.stats.inclinometer_count++;
@@ -352,7 +354,10 @@ static int32_t hi05r3_init(void)
     {
         return ret;
     }
-    return bsp_can_subscribe(HI05R3_BUS, j1939_id(PGN_ACC), j1939_id(PGN_INCLI), on_can_frame, NULL);
+    const uint32_t first_id = (J1939_PRIORITY << 26) | (PGN_ACC << 8) | HI05R3_NODE_ID;
+    const uint32_t last_id = (J1939_PRIORITY << 26) | (PGN_INCLI << 8) | HI05R3_NODE_ID;
+
+    return bsp_can_subscribe(HI05R3_BUS, first_id, last_id, on_can_frame, NULL);
 }
 INIT_CDD_STAGE1(hi05r3_init);
 
