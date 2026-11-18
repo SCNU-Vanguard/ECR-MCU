@@ -1,7 +1,8 @@
-#include "cdd/imu/heater/heater.h"
+#include "cdd/imu/bmi088/heater.h"
 #include "ins_config.h"
 #include "bsp/pwm/bsp_pwm.h"
 #include "component/common/err.h"
+#include "component/pid/pid.h"
 
 #define PPM_FULL_SCALE      1000000.0f
 
