@@ -2,6 +2,9 @@
 #include "cdd/interboard/interboard.h"
 #include "bsp/uart/bsp_uart.h"
 #include "osal/event.h"
+#if defined(CONFIG_CDD_INTERBOARD_MASTER)
+#include "osal/period.h"
+#endif
 #include "osal/osal.h"
 #include "component/common/initcall.h"
 #include "component/common/err.h"
@@ -13,15 +16,20 @@
 #if !defined(CONFIG_CDD_INTERBOARD_MASTER) && !defined(CONFIG_CDD_INTERBOARD_SLAVE)
 #error interboard: set CONFIG_CDD_INTERBOARD_MASTER or CONFIG_CDD_INTERBOARD_SLAVE
 #endif
+#if defined(CONFIG_CDD_INTERBOARD_MASTER) && !defined(INTERBOARD_TX_HZ)
+#error interboard: set INTERBOARD_TX_HZ in interboard_config.h
+#endif
+
+_Static_assert(sizeof(interboard_request_t) <= INTERBOARD_PAYLOAD_MAX, "interboard request exceeds INTERBOARD_PAYLOAD_MAX");
+_Static_assert(sizeof(interboard_reply_t) <= INTERBOARD_PAYLOAD_MAX, "interboard reply exceeds INTERBOARD_PAYLOAD_MAX");
 
 #define INTERBOARD_SOF            0xA5u
 #define INTERBOARD_RX_BLOCK_MAX   128u    /* 与 board.c 里 interboard 接收缓冲一致 */
-#define INTERBOARD_HEADER_LENGTH  4u      /* 帧头 + 长度 + 命令 + 序号 */
+#define INTERBOARD_HEADER_LENGTH  3u
 #define INTERBOARD_CRC_LENGTH     2u
 #define INTERBOARD_MAX_FRAME      (INTERBOARD_HEADER_LENGTH + INTERBOARD_PAYLOAD_MAX + INTERBOARD_CRC_LENGTH)
 #define INTERBOARD_STREAM_SIZE    (INTERBOARD_MAX_FRAME - 1u + INTERBOARD_RX_BLOCK_MAX)
-#define INTERBOARD_REPLY_MS       10u
-#define INTERBOARD_OFFLINE_GAP_MS 50u
+#define INTERBOARD_REPLY_TIMEOUT  OS_TIMEOUT_10MS
 #define INTERBOARD_OFFLINE_STREAK 3u
 
 static interboard_link_t link;
@@ -34,10 +42,11 @@ static bool request_seen;
 #endif
 static uint8_t stream[INTERBOARD_STREAM_SIZE];
 static uint32_t stream_count;
+#if defined(CONFIG_CDD_INTERBOARD_SLAVE)
 static uint32_t last_ok_ms;
+#endif
 
 #if defined(CONFIG_CDD_INTERBOARD_MASTER)
-static bool pending;
 static bool in_flight;
 static uint8_t in_flight_sequence;
 static uint32_t in_flight_ms;
@@ -141,6 +150,11 @@ void interboard_store_reply(const interboard_reply_t *reply)
 
 void interboard_get_link(interboard_link_t *out)
 {
+    if (out == NULL)
+    {
+        return;
+    }
+
     uint32_t irq_key = os_irq_save();
 
     *out = link;
@@ -155,15 +169,14 @@ static void note_bad_frame(void)
     os_irq_restore(irq_key);
 }
 
-static bool send_frame(uint8_t command, uint8_t sequence, const void *payload, uint8_t length)
+static bool send_frame(uint8_t sequence, const void *payload, uint8_t length)
 {
     uint8_t frame[INTERBOARD_MAX_FRAME];
     uint32_t frame_length = INTERBOARD_HEADER_LENGTH + (uint32_t)length + INTERBOARD_CRC_LENGTH;
 
     frame[0] = INTERBOARD_SOF;
     frame[1] = length;
-    frame[2] = command;
-    frame[3] = sequence;
+    frame[2] = sequence;
     if (length != 0u)
     {
         memcpy(frame + INTERBOARD_HEADER_LENGTH, payload, length);
@@ -179,108 +192,99 @@ static void drop_bytes(uint32_t count)
 }
 
 #if defined(CONFIG_CDD_INTERBOARD_MASTER)
-static void try_send(void);
-
-int32_t interboard_post(void)
+static void master_count_timeout(void)
 {
-    if (sizeof(interboard_request_t) > INTERBOARD_PAYLOAD_MAX)
-    {
-        return ERR_INVAL;
-    }
-
-    uint32_t irq_key = os_irq_save();
-
-    pending = true;
-    os_irq_restore(irq_key);
-    try_send();
-    return ERR_OK;
-}
-
-static void try_send(void)
-{
-    interboard_request_t request;
-    uint8_t sequence;
-
-    if (in_flight)
-    {
-        return;
-    }
-
-    uint32_t irq_key = os_irq_save();
-
-    if (!pending)
-    {
-        os_irq_restore(irq_key);
-        return;
-    }
-    request = request_image;
-    pending = false;
-    sequence = next_sequence;
-    os_irq_restore(irq_key);
-
-    if (!send_frame(INTERBOARD_CMD, sequence, &request, (uint8_t)sizeof request))
-    {
-        irq_key = os_irq_save();
-        pending = true;
-        os_irq_restore(irq_key);
-        return;
-    }
-    in_flight = true;
-    in_flight_sequence = sequence;
-    in_flight_ms = os_time_ms();
-    next_sequence++;
-}
-
-static void master_on_frame(uint8_t command, uint8_t sequence, const uint8_t *payload, uint8_t length)
-{
-    if (!in_flight || command != INTERBOARD_CMD || sequence != in_flight_sequence)
-    {
-        return;
-    }
-    if (length != sizeof(interboard_reply_t))
-    {
-        note_bad_frame();
-        in_flight = false;
-        return;
-    }
-    in_flight = false;
-    timeout_streak = 0;
-    last_ok_ms = os_time_ms();
-
-    uint32_t irq_key = os_irq_save();
-
-    memcpy(&reply_image, payload, sizeof reply_image);
-    reply_seen = true;
-    link.online = true;
-    link.frames++;
-    os_irq_restore(irq_key);
-    try_send();
-}
-
-static void master_age(void)
-{
-    if (!in_flight || (os_time_ms() - in_flight_ms) < INTERBOARD_REPLY_MS)
-    {
-        return;
-    }
     in_flight = false;
     timeout_streak++;
-
-    uint32_t irq_key = os_irq_save();
-
     link.timeouts++;
     if (timeout_streak >= INTERBOARD_OFFLINE_STREAK)
     {
         link.online = false;
     }
+}
+
+static void master_send(void)
+{
+    interboard_request_t request;
+    uint8_t sequence;
+    uint32_t now = os_time_ms();
+    uint32_t irq_key = os_irq_save();
+
+    if (in_flight)
+    {
+        if ((now - in_flight_ms) < INTERBOARD_REPLY_TIMEOUT)
+        {
+            os_irq_restore(irq_key);
+            return;
+        }
+        master_count_timeout();
+    }
+    request = request_image;
+    sequence = next_sequence++;
+    in_flight = true;
+    in_flight_sequence = sequence;
+    in_flight_ms = now;
+    os_irq_restore(irq_key);
+
+    if (send_frame(sequence, &request, (uint8_t)sizeof request))
+    {
+        return;
+    }
+
+    irq_key = os_irq_save();
+    if (in_flight && in_flight_sequence == sequence)
+    {
+        in_flight = false;
+        next_sequence = sequence;
+    }
+    os_irq_restore(irq_key);
+}
+
+static void master_on_frame(uint8_t sequence, const uint8_t *payload, uint8_t length)
+{
+    uint32_t irq_key = os_irq_save();
+
+    if (!in_flight || sequence != in_flight_sequence)
+    {
+        os_irq_restore(irq_key);
+        return;
+    }
+    if (length != sizeof(interboard_reply_t))
+    {
+        link.bad_frames++;
+        in_flight = false;
+        os_irq_restore(irq_key);
+        return;
+    }
+    memcpy(&reply_image, payload, sizeof reply_image);
+    reply_seen = true;
+    link.online = true;
+    link.frames++;
+    timeout_streak = 0;
+    in_flight = false;
+    os_irq_restore(irq_key);
+}
+
+static void master_age(void)
+{
+    uint32_t now = os_time_ms();
+    uint32_t irq_key = os_irq_save();
+
+    if (!in_flight || (now - in_flight_ms) < INTERBOARD_REPLY_TIMEOUT)
+    {
+        os_irq_restore(irq_key);
+        return;
+    }
+    master_count_timeout();
     os_irq_restore(irq_key);
 }
 #elif defined(CONFIG_CDD_INTERBOARD_SLAVE)
-static void slave_on_frame(uint8_t command, uint8_t sequence, const uint8_t *payload, uint8_t length)
+static void slave_on_frame(uint8_t sequence, const uint8_t *payload, uint8_t length)
 {
     interboard_reply_t reply;
+    uint32_t now = os_time_ms();
 
-    if (command != INTERBOARD_CMD || length != sizeof(interboard_request_t))
+    if (length != sizeof(interboard_request_t))
     {
         note_bad_frame();
         return;
@@ -290,30 +294,31 @@ static void slave_on_frame(uint8_t command, uint8_t sequence, const uint8_t *pay
 
     memcpy(&request_image, payload, sizeof request_image);
     request_seen = true;
+    link.online = true;
+    last_ok_ms = now;
     reply = reply_image;
     os_irq_restore(irq_key);
 
-    if (!send_frame(INTERBOARD_CMD, sequence, &reply, (uint8_t)sizeof reply))
+    if (!send_frame(sequence, &reply, (uint8_t)sizeof reply))
     {
         return;
     }
 
     irq_key = os_irq_save();
-    link.online = true;
     link.frames++;
     os_irq_restore(irq_key);
-    last_ok_ms = os_time_ms();
 }
 
 static void slave_age(void)
 {
-    if (last_ok_ms == 0u || (os_time_ms() - last_ok_ms) < INTERBOARD_OFFLINE_GAP_MS)
-    {
-        return;
-    }
-
+    uint32_t now = os_time_ms();
     uint32_t irq_key = os_irq_save();
 
+    if (!request_seen || (now - last_ok_ms) < OS_TIMEOUT_50MS)
+    {
+        os_irq_restore(irq_key);
+        return;
+    }
     if (link.online)
     {
         link.timeouts++;
@@ -323,12 +328,12 @@ static void slave_age(void)
 }
 #endif
 
-static void accept_frame(uint8_t command, uint8_t sequence, const uint8_t *payload, uint8_t length)
+static void accept_frame(uint8_t sequence, const uint8_t *payload, uint8_t length)
 {
 #if defined(CONFIG_CDD_INTERBOARD_MASTER)
-    master_on_frame(command, sequence, payload, length);
+    master_on_frame(sequence, payload, length);
 #elif defined(CONFIG_CDD_INTERBOARD_SLAVE)
-    slave_on_frame(command, sequence, payload, length);
+    slave_on_frame(sequence, payload, length);
 #endif
 }
 
@@ -373,7 +378,7 @@ static void parse_stream(void)
             drop_bytes(1u);
             continue;
         }
-        accept_frame(stream[2], stream[3], stream + INTERBOARD_HEADER_LENGTH, payload_length);
+        accept_frame(stream[2], stream + INTERBOARD_HEADER_LENGTH, payload_length);
         drop_bytes(frame_length);
     }
 }
@@ -392,20 +397,27 @@ static void interboard_run(void *argument, const uint8_t *data, uint16_t len)
         stream_count += len;
         parse_stream();
     }
-    /* 老化检查每次调用都做：持续有噪声/CRC 错误字节时不会出现队列超时，不能只靠超时来老化 */
 #if defined(CONFIG_CDD_INTERBOARD_MASTER)
     master_age();
-    try_send();
 #elif defined(CONFIG_CDD_INTERBOARD_SLAVE)
     slave_age();
 #endif
 }
-EVENT_TASK_DEFINE(interboard_task, OS_PRIORITY_HIGH, OS_STACK_MEDIUM, EVENT_QUEUE, INTERBOARD_RX_BLOCK_MAX,
-                  OS_QUEUE_LEN_4, OS_TIMEOUT_10MS, interboard_run, NULL);
+EVENT_TASK_DEFINE(interboard_rx_task, OS_PRIORITY_HIGH, OS_STACK_MEDIUM, EVENT_QUEUE, INTERBOARD_RX_BLOCK_MAX,
+                  OS_QUEUE_LEN_4, INTERBOARD_REPLY_TIMEOUT, interboard_run, NULL);
+
+#if defined(CONFIG_CDD_INTERBOARD_MASTER)
+static void interboard_tx_run(void *argument)
+{
+    (void)argument;
+    master_send();
+}
+PERIOD_TASK_DEFINE(interboard_tx_task, INTERBOARD_TX_HZ, OS_PRIORITY_HIGH, OS_STACK_SMALL, interboard_tx_run, NULL);
+#endif
 
 static int32_t interboard_init(void)
 {
-    bsp_uart_bind_event(UART_INTERBOARD, &interboard_task);
+    bsp_uart_bind_event(UART_INTERBOARD, &interboard_rx_task);
     return ERR_OK;
 }
 INIT_CDD_STAGE1(interboard_init);

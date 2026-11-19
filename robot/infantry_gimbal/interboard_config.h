@@ -1,7 +1,10 @@
 #ifndef INTERBOARD_CONFIG_H__
 #define INTERBOARD_CONFIG_H__
 #include "component/common/types.h"
+#include "osal/osal.h"
 #define INTERBOARD_PAYLOAD_MAX  64u
+/* 填 OS_FREQ_xxHZ。低于 OS_FREQ_50HZ 时底盘会按 OS_TIMEOUT_50MS 反复掉线。 */
+#define INTERBOARD_TX_HZ  OS_FREQ_100HZ
 typedef struct BYTE_PACKED
 {
     uint8_t unused;
