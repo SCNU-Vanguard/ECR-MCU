@@ -25,4 +25,17 @@ ROBOT_LK_MOTOR_CONFIG_TABLE(ROBOT_DECLARE_LK_MOTOR)
 #undef ROBOT_DECLARE_LK_MOTOR
 #endif
 
+#ifdef CONFIG_CDD_MOTOR_HT_MOTOR
+#include "cdd/motor/ht_motor/ht_motor.h"
+#ifndef ROBOT_HT_MOTOR_CONFIG_TABLE
+#define ROBOT_HT_MOTOR_CONFIG_TABLE(X)
+#endif
+#ifndef ROBOT_HT_MOTOR_CONTROL_TABLE
+#define ROBOT_HT_MOTOR_CONTROL_TABLE(X)
+#endif
+#define ROBOT_DECLARE_HT_MOTOR(_name, ...) extern ht_motor_t _name;
+ROBOT_HT_MOTOR_CONFIG_TABLE(ROBOT_DECLARE_HT_MOTOR)
+#undef ROBOT_DECLARE_HT_MOTOR
+#endif
+
 #endif

@@ -24,7 +24,9 @@ typedef enum
     MOTOR_TYPE_J8009P,
     MOTOR_TYPE_J10010L,
     MOTOR_TYPE_S3519,
+    MOTOR_TYPE_H6215,
     MOTOR_TYPE_MF9025,
+    MOTOR_TYPE_3532
 } motor_type_e;
 
 /* 控制模式 = 最外层闭环：
@@ -70,7 +72,7 @@ typedef struct
     /* 绑定信息：由各厂家的 register 函数填写 */
     can_id_e     bus;
     motor_type_e type;
-    uint16_t     feedback_id;              /* 这条总线上该电机反馈帧的标准帧 ID，同一总线上不能重复 */
+    uint16_t     feedback_id;              /* 反馈帧 ID，同一总线上不能重复 */
     bool         reverse;                  /* true：电机方向反装——反馈量（角度、速度、转矩）取反，输出也取反，应用层看到的方向不变 */
     uint32_t     timeout_ms;               /* 超过这么久没收到反馈 = 离线 */
 

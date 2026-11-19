@@ -4,7 +4,7 @@
 #include "component/log/log.h"
 
 /* 各兵种共用的电机注册。编译参数里有 -I robot/<r>，这里的 motor_config.h 就是当前兵种的表。
- * 兵种目录要提供四张表；某一类电机没有时，表体留空。
+ * 某一类电机没有时，对应表体留空。
  * 这里只定义变量并注册，不关心电机属于哪个功能模块。 */
 
 #ifdef CONFIG_CDD_MOTOR_DJI_MOTOR
@@ -158,6 +158,40 @@ static int32_t bind_lk_motor(const char *name, lk_motor_t *motor, const lk_motor
     }
 #endif
 
+#ifdef CONFIG_CDD_MOTOR_HT_MOTOR
+#define ROBOT_HT_MOTOR_CONTROL(_name, _mode, _akp, _aki, _akd, _akf, _aout, _aint, _aff, _adb, \
+                              _skp, _ski, _skd, _skf, _sout, _sint, _sff, _sdb) \
+    static const motor_control_config_t _name##_control = \
+    { \
+        .mode = (_mode), \
+        .angle_pid = { _akp, _aki, _akd, _akf, _aout, _aint, _aff, _adb }, \
+        .speed_pid = { _skp, _ski, _skd, _skf, _sout, _sint, _sff, _sdb }, \
+    };
+ROBOT_HT_MOTOR_CONTROL_TABLE(ROBOT_HT_MOTOR_CONTROL)
+#undef ROBOT_HT_MOTOR_CONTROL
+#define ROBOT_DEFINE_HT_MOTOR(_name, ...) ht_motor_t _name;
+ROBOT_HT_MOTOR_CONFIG_TABLE(ROBOT_DEFINE_HT_MOTOR)
+#undef ROBOT_DEFINE_HT_MOTOR
+
+#define ROBOT_BIND_HT_MOTOR(_name, _bus, _type, _id, _mode, _reverse, _timeout_ms, \
+                           _torque_scale, _torque_limit, _speed_limit, _kp, _kd, _control) \
+    { \
+        const ht_motor_config_t config = \
+        { \
+            .bus = (_bus), .type = (_type), .id = (_id), .mode = (_mode), \
+            .reverse = (_reverse), .timeout_ms = (_timeout_ms), .torque_scale = (_torque_scale), \
+            .torque_limit = (_torque_limit), .speed_limit = (_speed_limit), .kp = (_kp), .kd = (_kd), \
+            .control = (_control), \
+        }; \
+        register_ret = ht_motor_register(&_name, &config); \
+        if (register_ret != ERR_OK) \
+        { \
+            LOGE("bind ht motor %s failed: %d", #_name, (int)register_ret); \
+            return register_ret; \
+        } \
+    }
+#endif
+
 static int32_t motor_bind_init(void)
 {
     int32_t register_ret = ERR_OK;
@@ -170,6 +204,9 @@ static int32_t motor_bind_init(void)
 #endif
 #ifdef CONFIG_CDD_MOTOR_LK_MOTOR
     ROBOT_LK_MOTOR_CONFIG_TABLE(ROBOT_BIND_LK_MOTOR)
+#endif
+#ifdef CONFIG_CDD_MOTOR_HT_MOTOR
+    ROBOT_HT_MOTOR_CONFIG_TABLE(ROBOT_BIND_HT_MOTOR)
 #endif
     return register_ret;
 }
