@@ -32,8 +32,8 @@
 /* ================= dm_motor（j4310） ================= */
 
 #define ROBOT_DM_MOTOR_CONFIG_TABLE(X) \
-    X(yaw_j4310, CAN_BUS2, MOTOR_TYPE_J4310, 1, 0x11, DM_MOTOR_MODE_TORQUE, false, 3.14f, 30.0f, 10.0f, 100, 0.0f, 0.0f, 0.0f, 0.0f, &yaw_j4310_control)
-/* 名字     , 总线    , 型号           , tx_id, master, 控制模式           , 反向 , p_max, v_max, t_max, 超时, Kp , Kd , 速度上限, 电流上限, 控制参数 */
+    X(yaw_j4310, CAN_BUS2, MOTOR_TYPE_J4310, 1, 0x11, DM_MOTOR_MODE_TORQUE, false, 3.14f, 30.0f, 10.0f, 100, 0.0f, 0.0f, 0.0f, &yaw_j4310_control)
+/* 名字     , 总线    , 型号           , tx_id, master, 控制模式           , 反向 , p_max, v_max, t_max, 超时, Kp , Kd , 速度上限, 控制参数 */
 /* p_max 必须与电机里设置的一致；上位机只能设两位小数，J4310 取 3.14 近似 pi（上报位置一个周期 = 6.28 rad，多圈累计按 2*p_max 一圈） */
 
 #define ROBOT_DM_MOTOR_CONTROL_TABLE(X) \

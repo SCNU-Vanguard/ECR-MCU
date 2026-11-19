@@ -12,13 +12,12 @@
  *                                    发送前应用层可以改 output，需要有控制配置
  *   POSITION_SPEED：ID = 0x100+tx_id  位置速度：目标位置 + 速度上限，电机内部闭环
  *   SPEED：         ID = 0x200+tx_id  速度：目标速度，电机内部闭环
- *   FORCE_POSITION：ID = 0x300+tx_id  力位混合：目标位置 + 速度上限 + 电流上限，电机内部闭环 */
+ */
 typedef enum
 {
     DM_MOTOR_MODE_MIT            = 0x000,
     DM_MOTOR_MODE_POSITION_SPEED = 0x100,
     DM_MOTOR_MODE_SPEED          = 0x200,
-    DM_MOTOR_MODE_FORCE_POSITION = 0x300,
     DM_MOTOR_MODE_TORQUE         = 0x001,   /* 不是 ID 偏移。控制帧和使能帧的 ID 都按 MIT 计算，即 tx_id */
 } dm_motor_mode_e;
 
@@ -46,8 +45,8 @@ typedef struct
     uint32_t       timeout_ms;       /* 超过这么久没收到反馈 = 离线，不能为 0 */
     float          kp;               /* 仅 DM_MOTOR_MODE_MIT：电机内部位置刚度，0..500 */
     float          kd;               /* 仅 DM_MOTOR_MODE_MIT：电机内部阻尼，0..5 */
-    float          speed_limit;      /* POSITION_SPEED / FORCE_POSITION 的速度上限，rad/s（力位混合 0..100） */
-    float          current_limit;    /* FORCE_POSITION 的电流上限，标幺值 0..1（相对电机最大电流） */
+    float          speed_limit;      /* POSITION_SPEED 的速度上限，rad/s */
+    float          current_limit;
     const motor_control_config_t *control;   /* 软件控制配置，NULL = 只用硬件闭环的组合 */
 } dm_motor_config_t;
 
@@ -71,7 +70,6 @@ typedef struct
     float          cmd_kp;
     float          cmd_kd;
     float          cmd_torque;
-    float          cmd_current_limit;
     bool           cmd_from_output;  /* true：发送时 t_ff 取 base.output，不取 cmd_torque */
     /* 反馈：在事件任务 dm_motor_task 里更新（中断只拷贝帧） */
     uint8_t        state;            /* 电机状态码：0 失能 1 使能 8 超压 9 欠压 A 过流 B MOS过温 C 线圈过温 D 通信丢失 E 过载 */
@@ -98,7 +96,6 @@ int32_t dm_motor_clear_error(dm_motor_t *motor);     /* 清除故障（如过热
  *   TORQUE         级联结果写入 base.output，再作为 t_ff 发出（Kp = Kd = 0）
  *   POSITION_SPEED ANGLE -> p_des + speed_limit
  *   SPEED          SPEED -> v_des；ANGLE -> 软件角度环输出 v_des
- *   FORCE_POSITION ANGLE -> p_des + speed_limit + current_limit
  *   不支持的组合、active = false：保持帧（不出力，位置保持在当前位置）
  * 速度环是增量式，同一个电机一个控制周期内只能计算一次 */
 void    dm_motor_compute(dm_motor_t *motor);

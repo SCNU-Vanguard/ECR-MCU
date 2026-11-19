@@ -7,7 +7,7 @@
 #include "osal/osal.h"
 #include "osal/event.h"
 
-/* dm_motor 协议（依据 j4310-2EC 说明书，与 2026 步兵、标准机器人的报文一致）。
+/* dm_motor 协议
  *
  * 反馈帧（四种模式相同），8 字节：
  *   byte0     高 4 位 = 状态码，低 4 位 = 电机 CAN ID
@@ -25,7 +25,7 @@
  *   TORQUE：   帧格式与 MIT 相同。Kp、Kd 填 0，t_ff 取 output。电机上位机模式仍是 MIT
  *   位置速度 0x100：p_des(float 小端) v_des(float 小端)，8 字节
  *   速度 0x200：v_des(float 小端)，4 字节
- *   力位混合 0x300：p_des(float 小端) v_des(u16 小端，rad/s x100，0..10000) i_des(u16 小端，标幺 x10000，0..10000)，8 字节 */
+ */
 #define DM_MOTOR_COMMAND_ENABLE       0xFCu
 #define DM_MOTOR_COMMAND_DISABLE      0xFDu
 #define DM_MOTOR_COMMAND_SET_ZERO     0xFEu
@@ -34,9 +34,6 @@
 #define DM_MOTOR_MAX_STANDARD_ID      0x7FFu
 #define DM_MOTOR_KP_MAX               500.0f
 #define DM_MOTOR_KD_MAX               5.0f
-#define HYBRID_SPEED_SCALE      100.0f
-#define HYBRID_CURRENT_SCALE    10000.0f
-#define HYBRID_FIELD_MAX        10000.0f
 /* s3519 说明书：齿轮减速比 3591/187（约 1:19.2）。位置在电机侧，速度和转矩在输出轴 */
 #define S3519_GEAR_RATIO     (3591.0f / 187.0f)
 
@@ -47,38 +44,9 @@ static bool is_dm_motor_type(motor_type_e type)
     return type == MOTOR_TYPE_J4310 || type == MOTOR_TYPE_J8009P || type == MOTOR_TYPE_S3519;
 }
 
-static float gear_ratio_of(motor_type_e type)
-{
-    return type == MOTOR_TYPE_S3519 ? S3519_GEAR_RATIO : 1.0f;
-}
-
-static float limit_value(float value, float minimum, float maximum)
-{
-    if (value > maximum)
-    {
-        return maximum;
-    }
-    if (value < minimum)
-    {
-        return minimum;
-    }
-    return value;
-}
-
-static float unsigned_to_float(uint32_t value, float range_min, float range_max, uint32_t bits)
-{
-    float span = range_max - range_min;
-
-    return (float)value * span / (float)((1u << bits) - 1u) + range_min;
-}
-
-static uint32_t float_to_unsigned(float value, float range_min, float range_max, uint32_t bits)
-{
-    float span = range_max - range_min;
-
-    value = limit_value(value, range_min, range_max);
-    return (uint32_t)((value - range_min) * (float)((1u << bits) - 1u) / span);
-}
+static float limit_value(float value, float minimum, float maximum);
+static float unsigned_to_float(uint32_t value, float range_min, float range_max, uint32_t bits);
+static uint32_t float_to_unsigned(float value, float range_min, float range_max, uint32_t bits);
 
 static void update_feedback(dm_motor_t *motor, const can_event_t *event)
 {
@@ -186,7 +154,6 @@ int32_t dm_motor_register(dm_motor_t *motor, const dm_motor_config_t *config)
         case DM_MOTOR_MODE_TORQUE:
         case DM_MOTOR_MODE_POSITION_SPEED:
         case DM_MOTOR_MODE_SPEED:
-        case DM_MOTOR_MODE_FORCE_POSITION:
             break;
         default:
             return ERR_INVAL;
@@ -207,7 +174,7 @@ int32_t dm_motor_register(dm_motor_t *motor, const dm_motor_config_t *config)
     motor->kd = config->kd;
     motor->speed_limit = config->speed_limit;
     motor->current_limit = config->current_limit;
-    motor->gear_ratio = gear_ratio_of(config->type);
+    motor->gear_ratio = (config->type == MOTOR_TYPE_S3519 )? S3519_GEAR_RATIO : 1.0f;
     motor_control_setup(&motor->base, config->control);
 
     int32_t add_ret = motor_registry_add(&motor->base);
@@ -219,19 +186,12 @@ int32_t dm_motor_register(dm_motor_t *motor, const dm_motor_config_t *config)
     return bsp_can_subscribe_event(config->bus, config->master_id, config->master_id, &dm_motor_task);
 }
 
-/* TORQUE 的枚举值不是协议偏移，线上 ID 与 MIT 相同 */
-static uint32_t control_id(const dm_motor_t *motor)
-{
-    uint32_t offset = (motor->mode == DM_MOTOR_MODE_TORQUE) ? (uint32_t)DM_MOTOR_MODE_MIT : (uint32_t)motor->mode;
-
-    return offset + motor->tx_id;
-}
-
 static int32_t send_command(dm_motor_t *motor, uint8_t command)
 {
     can_frame_t frame;
+    uint32_t offset = (motor->mode == DM_MOTOR_MODE_TORQUE) ? (uint32_t)DM_MOTOR_MODE_MIT : (uint32_t)motor->mode;
 
-    frame.id = control_id(motor);
+    frame.id = offset + motor->tx_id;
     frame.len = 8;
     memset(frame.data, 0xFF, 7);
     frame.data[7] = command;
@@ -268,7 +228,6 @@ static void set_hold(dm_motor_t *motor)
     motor->cmd_kp = 0.0f;
     motor->cmd_kd = 0.0f;
     motor->cmd_torque = 0.0f;
-    motor->cmd_current_limit = 0.0f;
     motor->cmd_from_output = false;
 }
 
@@ -279,56 +238,6 @@ static float angle_target_to_motor(const dm_motor_t *motor)
     float sign = motor->base.reverse ? -1.0f : 1.0f;
 
     return sign * limit_value(target, -motor->p_max, motor->p_max);
-}
-
-/* Kp = Kd = 0，t_ff 取 output。没有控制配置时保持 set_hold 留下的空帧 */
-static void compute_output(dm_motor_t *motor)
-{
-    motor_t *base = &motor->base;
-
-    if (!base->has_control)
-    {
-        return;
-    }
-    float reference = base->target;
-
-    if (base->control_mode == MOTOR_CONTROL_ANGLE)
-    {
-        reference = motor_angle_loop(base, reference);
-    }
-    if (base->control_mode != MOTOR_CONTROL_OUTPUT)
-    {
-        reference = motor_speed_loop(base, reference);
-    }
-    base->output = limit_value(reference + motor_output_feedforward(base), -motor->t_max, motor->t_max);
-    motor->cmd_from_output = true;
-}
-
-static void compute_mit(dm_motor_t *motor)
-{
-    motor_t *base = &motor->base;
-    float sign = base->reverse ? -1.0f : 1.0f;
-
-    set_hold(motor);
-    switch (base->control_mode)
-    {
-        case MOTOR_CONTROL_OUTPUT:
-            base->output = base->target + motor_output_feedforward(base);
-            motor->cmd_from_output = true;
-            break;
-        case MOTOR_CONTROL_SPEED:
-            motor->cmd_velocity = sign * (base->target + motor_speed_feedforward(base));
-            motor->cmd_kd = motor->kd;
-            motor->cmd_torque = sign * motor_output_feedforward(base);
-            break;
-        case MOTOR_CONTROL_ANGLE:
-            motor->cmd_position = angle_target_to_motor(motor);
-            motor->cmd_velocity = sign * motor_speed_feedforward(base);
-            motor->cmd_kp = motor->kp;
-            motor->cmd_kd = motor->kd;
-            motor->cmd_torque = sign * motor_output_feedforward(base);
-            break;
-    }
 }
 
 void dm_motor_compute(dm_motor_t *motor)
@@ -345,10 +254,42 @@ void dm_motor_compute(dm_motor_t *motor)
     switch (motor->mode)
     {
         case DM_MOTOR_MODE_MIT:
-            compute_mit(motor);
+            switch (base->control_mode)
+            {
+                case MOTOR_CONTROL_OUTPUT:
+                    base->output = base->target + motor_output_feedforward(base);
+                    motor->cmd_from_output = true;
+                    break;
+                case MOTOR_CONTROL_SPEED:
+                    motor->cmd_velocity = sign * (base->target + motor_speed_feedforward(base));
+                    motor->cmd_kd = motor->kd;
+                    motor->cmd_torque = sign * motor_output_feedforward(base);
+                    break;
+                case MOTOR_CONTROL_ANGLE:
+                    motor->cmd_position = angle_target_to_motor(motor);
+                    motor->cmd_velocity = sign * motor_speed_feedforward(base);
+                    motor->cmd_kp = motor->kp;
+                    motor->cmd_kd = motor->kd;
+                    motor->cmd_torque = sign * motor_output_feedforward(base);
+                    break;
+            }
             break;
         case DM_MOTOR_MODE_TORQUE:
-            compute_output(motor);
+            if (base->has_control)
+            {
+                float reference = base->target;
+
+                if (base->control_mode == MOTOR_CONTROL_ANGLE)
+                {
+                    reference = motor_angle_loop(base, reference);
+                }
+                if (base->control_mode != MOTOR_CONTROL_OUTPUT)
+                {
+                    reference = motor_speed_loop(base, reference);
+                }
+                base->output = limit_value(reference + motor_output_feedforward(base), -motor->t_max, motor->t_max);
+                motor->cmd_from_output = true;
+            }
             break;
         case DM_MOTOR_MODE_POSITION_SPEED:
             if (base->control_mode == MOTOR_CONTROL_ANGLE)
@@ -367,14 +308,6 @@ void dm_motor_compute(dm_motor_t *motor)
                 float speed_reference = motor_angle_loop(base, base->target) + motor_speed_feedforward(base);
 
                 motor->cmd_velocity = sign * speed_reference;
-            }
-            break;
-        case DM_MOTOR_MODE_FORCE_POSITION:
-            if (base->control_mode == MOTOR_CONTROL_ANGLE)
-            {
-                motor->cmd_position = angle_target_to_motor(motor);
-                motor->cmd_velocity = motor->speed_limit;
-                motor->cmd_current_limit = motor->current_limit;
             }
             break;
     }
@@ -405,26 +338,15 @@ int32_t dm_motor_compute_bus(can_id_e bus)
     }
     return computed_count;
 }
-/* ---- 编码并发送 ---- */
-static void put_float_little_endian(uint8_t *destination, float value)
-{
-    memcpy(destination, &value, sizeof value);              /* Cortex-M 小端，与协议一致 */
-}
 
-static void put_uint16_little_endian(uint8_t *destination, uint16_t value)
-{
-    destination[0] = (uint8_t)(value & 0xFF);
-    destination[1] = (uint8_t)(value >> 8);
-}
-
-static uint16_t hybrid_field(float value, float scale)
-{
-    return (uint16_t)limit_value(value * scale, 0.0f, HYBRID_FIELD_MAX);
-}
+/* 用于位置速度模式、速度模式的小端序浮点数（位置、速度目标为浮点数）转换 */
+static void put_float_little_endian(uint8_t *destination, float value);
 
 static void encode_frame(const dm_motor_t *motor, can_frame_t *frame)
 {
-    frame->id = control_id(motor);
+    uint32_t offset = (motor->mode == DM_MOTOR_MODE_TORQUE) ? (uint32_t)DM_MOTOR_MODE_MIT : (uint32_t)motor->mode;
+
+    frame->id = offset + motor->tx_id;
     frame->len = 8;
     memset(frame->data, 0, sizeof frame->data);
     switch (motor->mode)
@@ -461,11 +383,6 @@ static void encode_frame(const dm_motor_t *motor, can_frame_t *frame)
         case DM_MOTOR_MODE_SPEED:
             frame->len = 4;
             put_float_little_endian(&frame->data[0], motor->cmd_velocity);
-            break;
-        case DM_MOTOR_MODE_FORCE_POSITION:
-            put_float_little_endian(&frame->data[0], motor->cmd_position);
-            put_uint16_little_endian(&frame->data[4], hybrid_field(motor->cmd_velocity, HYBRID_SPEED_SCALE));
-            put_uint16_little_endian(&frame->data[6], hybrid_field(motor->cmd_current_limit, HYBRID_CURRENT_SCALE));
             break;
     }
 }
@@ -509,6 +426,40 @@ int32_t dm_motor_send_bus(can_id_e bus)
     }
     return sent_count;
 }
+
+static float limit_value(float value, float minimum, float maximum)
+{
+    if (value > maximum)
+    {
+        return maximum;
+    }
+    if (value < minimum)
+    {
+        return minimum;
+    }
+    return value;
+}
+
+static float unsigned_to_float(uint32_t value, float range_min, float range_max, uint32_t bits)
+{
+    float span = range_max - range_min;
+
+    return (float)value * span / (float)((1u << bits) - 1u) + range_min;
+}
+
+static uint32_t float_to_unsigned(float value, float range_min, float range_max, uint32_t bits)
+{
+    float span = range_max - range_min;
+
+    value = limit_value(value, range_min, range_max);
+    return (uint32_t)((value - range_min) * (float)((1u << bits) - 1u) / span);
+}
+
+static void put_float_little_endian(uint8_t *destination, float value)
+{
+    memcpy(destination, &value, sizeof value);              /* Cortex-M 小端，与协议一致 */
+}
+
 
 #ifdef CONFIG_COMPONENT_SHELL
 #include "component/shell/shell_cmd.h"

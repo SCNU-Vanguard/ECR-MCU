@@ -82,7 +82,7 @@ static int32_t bind_dm_motor(const char *name, dm_motor_t *motor, const dm_motor
     return register_ret;
 }
 
-#define ROBOT_BIND_DM_MOTOR(_name, _bus, _type, _tx_id, _master_id, _mode, _reverse, _p_max, _v_max, _t_max, _timeout_ms, _kp, _kd, _speed_limit, _current_limit, _control)    \
+#define ROBOT_BIND_DM_MOTOR(_name, _bus, _type, _tx_id, _master_id, _mode, _reverse, _p_max, _v_max, _t_max, _timeout_ms, _kp, _kd, _speed_limit, _control)    \
     {                                                                                            \
         const dm_motor_config_t config =                                                         \
         {                                                                                        \
@@ -99,7 +99,6 @@ static int32_t bind_dm_motor(const char *name, dm_motor_t *motor, const dm_motor
             .kp         = (_kp),                                                                 \
             .kd         = (_kd),                                                                 \
             .speed_limit   = (_speed_limit),                                                     \
-            .current_limit = (_current_limit),                                                   \
             .control    = (_control),                                                            \
         };                                                                                       \
                                                                                                  \
