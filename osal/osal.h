@@ -102,8 +102,8 @@ typedef struct
 } os_mutex_t;
 
 bool    os_in_isr(void);
-/* CPU 占用统计：在空闲钩子里调用。统计原理见 osal/freertos/cpu_usage.c；CONFIG_OSAL_CPU_USAGE 没开时是空操作 */
-#ifdef CONFIG_OSAL_CPU_USAGE
+/* CPU 占用统计：在空闲钩子里调用。统计原理见 osal/freertos/cpu_usage.c；CONFIG_OSAL_FREERTOS_CPU_USAGE 没开时是空操作 */
+#ifdef CONFIG_OSAL_FREERTOS_CPU_USAGE
 void    os_idle_hook(void);
 #else
 #define os_idle_hook()  ((void)0)

@@ -5,10 +5,22 @@
 /* 云台（MASTER）与底盘（SLAVE）的 RS485。USART2 硬件 DE，协议里不翻转收发脚。
  * 只有一问一答：云台按 INTERBOARD_TX_HZ 发出请求缓存，底盘回同一序号的应答缓存。底盘不主动发。
  * 要改本侧缓存时，先 load 整帧，只改自己的字段，再 store 整帧。单板兵种不要打开 CONFIG_CDD_INTERBOARD。
+ * 本板是云台还是底盘，在当前兵种的 interboard_config.h 里写 INTERBOARD_ROLE。
  *
  * 帧（小端）：0xA5 | 载荷长度 | 序号 | 载荷 | CRC16 低字节 | CRC16 高字节
  * CRC16 与裁判系统相同。 */
+#define INTERBOARD_ROLE_MASTER  0
+#define INTERBOARD_ROLE_SLAVE   1
 #include "interboard_config.h"
+#ifndef INTERBOARD_ROLE
+#error "interboard_config.h must define INTERBOARD_ROLE"
+#endif
+#if INTERBOARD_ROLE != INTERBOARD_ROLE_MASTER && INTERBOARD_ROLE != INTERBOARD_ROLE_SLAVE
+#error "INTERBOARD_ROLE must be INTERBOARD_ROLE_MASTER or INTERBOARD_ROLE_SLAVE"
+#endif
+#if INTERBOARD_ROLE == INTERBOARD_ROLE_MASTER && !defined(INTERBOARD_TX_HZ)
+#error "interboard_config.h must define INTERBOARD_TX_HZ for MASTER"
+#endif
 
 typedef struct
 {
@@ -20,12 +32,12 @@ typedef struct
 
 void interboard_get_link(interboard_link_t *out);
 
-#if defined(CONFIG_CDD_INTERBOARD_MASTER)
+#if INTERBOARD_ROLE == INTERBOARD_ROLE_MASTER
 void interboard_load_request(interboard_request_t *request);
 void interboard_store_request(const interboard_request_t *request);
 /* 还没收到应答时返回 false。 */
 bool interboard_load_reply(interboard_reply_t *reply);
-#elif defined(CONFIG_CDD_INTERBOARD_SLAVE)
+#elif INTERBOARD_ROLE == INTERBOARD_ROLE_SLAVE
 /* 还没收到请求时返回 false。 */
 bool interboard_load_request(interboard_request_t *request);
 void interboard_load_reply(interboard_reply_t *reply);

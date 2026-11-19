@@ -2,23 +2,13 @@
 #include "cdd/interboard/interboard.h"
 #include "bsp/uart/bsp_uart.h"
 #include "osal/event.h"
-#if defined(CONFIG_CDD_INTERBOARD_MASTER)
+#if INTERBOARD_ROLE == INTERBOARD_ROLE_MASTER
 #include "osal/period.h"
 #endif
 #include "osal/osal.h"
 #include "component/common/initcall.h"
 #include "component/common/err.h"
 #include "component/crc/crc.h"
-
-#if defined(CONFIG_CDD_INTERBOARD_MASTER) && defined(CONFIG_CDD_INTERBOARD_SLAVE)
-#error interboard: set only MASTER or only SLAVE
-#endif
-#if !defined(CONFIG_CDD_INTERBOARD_MASTER) && !defined(CONFIG_CDD_INTERBOARD_SLAVE)
-#error interboard: set CONFIG_CDD_INTERBOARD_MASTER or CONFIG_CDD_INTERBOARD_SLAVE
-#endif
-#if defined(CONFIG_CDD_INTERBOARD_MASTER) && !defined(INTERBOARD_TX_HZ)
-#error interboard: set INTERBOARD_TX_HZ in interboard_config.h
-#endif
 
 _Static_assert(sizeof(interboard_request_t) <= INTERBOARD_PAYLOAD_MAX, "interboard request exceeds INTERBOARD_PAYLOAD_MAX");
 _Static_assert(sizeof(interboard_reply_t) <= INTERBOARD_PAYLOAD_MAX, "interboard reply exceeds INTERBOARD_PAYLOAD_MAX");
@@ -35,18 +25,18 @@ _Static_assert(sizeof(interboard_reply_t) <= INTERBOARD_PAYLOAD_MAX, "interboard
 static interboard_link_t link;
 static interboard_request_t request_image;
 static interboard_reply_t reply_image;
-#if defined(CONFIG_CDD_INTERBOARD_MASTER)
+#if INTERBOARD_ROLE == INTERBOARD_ROLE_MASTER
 static bool reply_seen;
 #else
 static bool request_seen;
 #endif
 static uint8_t stream[INTERBOARD_STREAM_SIZE];
 static uint32_t stream_count;
-#if defined(CONFIG_CDD_INTERBOARD_SLAVE)
+#if INTERBOARD_ROLE == INTERBOARD_ROLE_SLAVE
 static uint32_t last_ok_ms;
 #endif
 
-#if defined(CONFIG_CDD_INTERBOARD_MASTER)
+#if INTERBOARD_ROLE == INTERBOARD_ROLE_MASTER
 static bool in_flight;
 static uint8_t in_flight_sequence;
 static uint32_t in_flight_ms;
@@ -54,7 +44,7 @@ static uint8_t next_sequence;
 static uint8_t timeout_streak;
 #endif
 
-#if defined(CONFIG_CDD_INTERBOARD_MASTER)
+#if INTERBOARD_ROLE == INTERBOARD_ROLE_MASTER
 void interboard_load_request(interboard_request_t *request)
 {
     if (request == NULL)
@@ -100,7 +90,7 @@ bool interboard_load_reply(interboard_reply_t *reply)
     os_irq_restore(irq_key);
     return seen;
 }
-#elif defined(CONFIG_CDD_INTERBOARD_SLAVE)
+#elif INTERBOARD_ROLE == INTERBOARD_ROLE_SLAVE
 bool interboard_load_request(interboard_request_t *request)
 {
     bool seen;
@@ -191,7 +181,7 @@ static void drop_bytes(uint32_t count)
     memmove(stream, stream + count, stream_count);
 }
 
-#if defined(CONFIG_CDD_INTERBOARD_MASTER)
+#if INTERBOARD_ROLE == INTERBOARD_ROLE_MASTER
 static void master_count_timeout(void)
 {
     in_flight = false;
@@ -278,7 +268,7 @@ static void master_age(void)
     master_count_timeout();
     os_irq_restore(irq_key);
 }
-#elif defined(CONFIG_CDD_INTERBOARD_SLAVE)
+#elif INTERBOARD_ROLE == INTERBOARD_ROLE_SLAVE
 static void slave_on_frame(uint8_t sequence, const uint8_t *payload, uint8_t length)
 {
     interboard_reply_t reply;
@@ -330,9 +320,9 @@ static void slave_age(void)
 
 static void accept_frame(uint8_t sequence, const uint8_t *payload, uint8_t length)
 {
-#if defined(CONFIG_CDD_INTERBOARD_MASTER)
+#if INTERBOARD_ROLE == INTERBOARD_ROLE_MASTER
     master_on_frame(sequence, payload, length);
-#elif defined(CONFIG_CDD_INTERBOARD_SLAVE)
+#elif INTERBOARD_ROLE == INTERBOARD_ROLE_SLAVE
     slave_on_frame(sequence, payload, length);
 #endif
 }
@@ -397,16 +387,16 @@ static void interboard_run(void *argument, const uint8_t *data, uint16_t len)
         stream_count += len;
         parse_stream();
     }
-#if defined(CONFIG_CDD_INTERBOARD_MASTER)
+#if INTERBOARD_ROLE == INTERBOARD_ROLE_MASTER
     master_age();
-#elif defined(CONFIG_CDD_INTERBOARD_SLAVE)
+#elif INTERBOARD_ROLE == INTERBOARD_ROLE_SLAVE
     slave_age();
 #endif
 }
 EVENT_TASK_DEFINE(interboard_rx_task, OS_PRIORITY_HIGH, OS_STACK_MEDIUM, EVENT_QUEUE, INTERBOARD_RX_BLOCK_MAX,
                   OS_QUEUE_LEN_4, INTERBOARD_REPLY_TIMEOUT, interboard_run, NULL);
 
-#if defined(CONFIG_CDD_INTERBOARD_MASTER)
+#if INTERBOARD_ROLE == INTERBOARD_ROLE_MASTER
 static void interboard_tx_run(void *argument)
 {
     (void)argument;
