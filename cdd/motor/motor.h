@@ -4,9 +4,9 @@
 #include "component/pid/pid.h"
 #include "bsp/include/bsp_ids.h"
 
-/* 电机框架的公共部分：所有 CAN 电机（dji_motor、dm_motor）的"绑定信息 + 通用反馈 + 控制器 + 在线/错误判断"。
+/* 电机框架的公共部分：所有 CAN 电机（dji_motor、dm_motor、lk_motor）的"绑定信息 + 通用反馈 + 控制器 + 在线/错误判断"。
  * 框架只关心电机挂在哪条 CAN 总线、反馈帧 ID 是什么，不关心电机属于底盘还是云台。
- * 具体电机（dji_motor_t、dm_motor_t）的第一个成员都是 motor_t，可以直接取地址当 motor_t * 用。
+ * 具体电机（dji_motor_t、dm_motor_t、lk_motor_t）的第一个成员都是 motor_t，可以直接取地址当 motor_t * 用。
  *
  * 使用流程：
  *   1. cdd/motor/motor_init.c 按 robot 的电机表注册（绑定总线），注册时可以带一份控制配置（模式和 PID）。反馈默认是电机自己的，前馈为 0，要换在初始化里 motor_bind_xxx
@@ -117,8 +117,8 @@ void motor_bind_speed_feedback(motor_t *motor, const float *speed_feedback);
 void motor_bind_speed_feedforward(motor_t *motor, const float *speed_feedforward);
 void motor_bind_output_feedforward(motor_t *motor, const float *output_feedforward);
 /* 设置目标值。单位由注册时写死的模式决定：角度 rad、转速 rad/s，或直接作为 output。
- * 没有控制配置的电机也能设置，但只有硬件自己闭环的模式（dm_motor 的 MIT 原生/位置速度/速度/力位混合）会生效，
- * 需要软件 PID 的组合没有控制配置时 dji_motor 输出 0，dm_motor 发保持帧 */
+ * 没有控制配置的电机也能设置，但只有硬件自己闭环的模式（dm_motor 的 MIT 原生/位置速度/速度/力位混合，lk_motor 的速度闭环）会生效，
+ * 需要软件 PID 的组合没有控制配置时 dji_motor 输出 0，dm_motor 发保持帧，lk_motor 发 iq = 0 */
 int32_t motor_set_target(motor_t *motor, float target);
 /* 打开/关闭输出。关闭：dji_motor 发 0，dm_motor 发保持帧；同时清零两个 PID。
  * 打开：目标会在下一次计算、拿到有效反馈时自动重设为"当前角度"（角度模式）或 0（速度/直接输出模式）；

@@ -136,14 +136,17 @@ static int32_t bind_lk_motor(const char *name, lk_motor_t *motor, const lk_motor
     return register_ret;
 }
 
-#define ROBOT_BIND_LK_MOTOR(_name, _bus, _id, _reverse, _timeout_ms, _control)                   \
+#define ROBOT_BIND_LK_MOTOR(_name, _bus, _type, _id, _mode, _reverse, _timeout_ms, _iq_limit, _control) \
     {                                                                                            \
         const lk_motor_config_t config =                                                         \
         {                                                                                        \
             .bus        = (_bus),                                                                \
+            .type       = (_type),                                                               \
             .id         = (_id),                                                                 \
+            .mode       = (_mode),                                                               \
             .reverse    = (_reverse),                                                            \
             .timeout_ms = (_timeout_ms),                                                         \
+            .iq_limit   = (_iq_limit),                                                           \
             .control    = (_control),                                                            \
         };                                                                                       \
                                                                                                  \
