@@ -35,69 +35,7 @@ static const uint16_t tx_ids[TX_FRAME_COUNT] = { 0x200, 0x1FF, 0x2FF, 0x1FE, 0x2
 static bool subscribed[CAN_NUM];
 static bool dji_motor_dump_enabled;
 
-static bool is_dji_motor_type(motor_type_e type)
-{
-    return type == MOTOR_TYPE_M3508 || type == MOTOR_TYPE_M2006 || type == MOTOR_TYPE_GM6020;
-}
-
-static uint16_t feedback_id_of(motor_type_e type, uint8_t id)
-{
-    return (uint16_t)((type == MOTOR_TYPE_GM6020 ? 0x204u : 0x200u) + id);
-}
-
-/* 控制帧：返回 tx_ids 下标，*slot = 帧内位置 0..3；非法返回 -1 */
-static int tx_slot(motor_type_e type, gm6020_motor_mode_e gm6020_mode, uint8_t id, uint8_t *slot)
-{
-    if (id == 0u)
-    {
-        return -1;
-    }
-    if (type == MOTOR_TYPE_GM6020)
-    {
-        if (id > 7u || gm6020_mode == GM6020_MOTOR_UNFIT)
-        {
-            return -1;
-        }
-        *slot = (uint8_t)((id - 1u) & 3u);
-        if (gm6020_mode == GM6020_MOTOR_CURRENT)
-        {
-            return (id <= 4u) ? 3 : 4;
-        }
-        return (id <= 4u) ? 1 : 2;
-    }
-    if (id > 8u || gm6020_mode != GM6020_MOTOR_UNFIT)
-    {
-        return -1;
-    }
-    *slot = (uint8_t)((id - 1u) & 3u);
-    return (id <= 4u) ? 0 : 1;
-}
-
-static float output_limit_of(const dji_motor_t *motor)
-{
-    switch (motor->base.type)
-    {
-        case MOTOR_TYPE_GM6020:
-            return (motor->gm6020_mode == GM6020_MOTOR_CURRENT) ? LIMIT_GM6020_CURR : LIMIT_GM6020_VOLT;
-        case MOTOR_TYPE_M2006:
-            return LIMIT_M2006;
-        default:
-            return LIMIT_M3508;
-    }
-}
-
-static int16_t to_command(float value, float limit)
-{
-    if (value > limit)
-    {
-        value = limit;
-    }
-    if (value < -limit)
-    {
-        value = -limit;
-    }
-    return (int16_t)value;
-}
+static bool is_dji_motor_type(motor_type_e type);
 
 static void update_feedback(dji_motor_t *motor, const can_event_t *event)
 {
@@ -187,17 +125,32 @@ EVENT_TASK_DEFINE(dji_motor_task, OS_PRIORITY_HIGHEST, OS_STACK_MEDIUM, EVENT_QU
 
 int32_t dji_motor_register(dji_motor_t *motor, const dji_motor_config_t *config)
 {
-    uint8_t slot;
+    int frame_index = -1;
+
+    if (config != NULL && config->id != 0u)
+    {
+        if (config->type == MOTOR_TYPE_GM6020)
+        {
+            if (config->id <= 7u && config->gm6020_mode != GM6020_MOTOR_UNFIT)
+            {
+                frame_index = (config->gm6020_mode == GM6020_MOTOR_CURRENT) ? ((config->id <= 4u) ? 3 : 4) : ((config->id <= 4u) ? 1 : 2);
+            }
+        }
+        else if (config->id <= 8u && config->gm6020_mode == GM6020_MOTOR_UNFIT)
+        {
+            frame_index = (config->id <= 4u) ? 0 : 1;
+        }
+    }
 
     if (motor == NULL || config == NULL || !is_dji_motor_type(config->type) ||
-        config->offset_encoder >= ENCODER_COUNTS || tx_slot(config->type, config->gm6020_mode, config->id, &slot) < 0)
+        config->offset_encoder >= ENCODER_COUNTS || frame_index < 0)
     {
         return ERR_INVAL;
     }
     memset(motor, 0, sizeof *motor);
     motor->base.bus = config->bus;
     motor->base.type = config->type;
-    motor->base.feedback_id = feedback_id_of(config->type, config->id);
+    motor->base.feedback_id = (uint16_t)((config->type == MOTOR_TYPE_GM6020 ? 0x204u : 0x200u) + config->id);
     motor->base.reverse = config->reverse;
     motor->base.timeout_ms = config->timeout_ms;
     motor->id = config->id;
@@ -312,8 +265,29 @@ static void convert_output(dji_motor_t *motor)
         return;
     }
     float physical_output = base->reverse ? -base->output : base->output;
+    float limit;
 
-    motor->cmd = to_command(physical_output, output_limit_of(motor));
+    switch (base->type)
+    {
+        case MOTOR_TYPE_GM6020:
+            limit = (motor->gm6020_mode == GM6020_MOTOR_CURRENT) ? LIMIT_GM6020_CURR : LIMIT_GM6020_VOLT;
+            break;
+        case MOTOR_TYPE_M2006:
+            limit = LIMIT_M2006;
+            break;
+        default:
+            limit = LIMIT_M3508;
+            break;
+    }
+    if (physical_output > limit)
+    {
+        physical_output = limit;
+    }
+    else if (physical_output < -limit)
+    {
+        physical_output = -limit;
+    }
+    motor->cmd = (int16_t)physical_output;
 }
 
 int32_t dji_motor_send_bus(can_id_e bus)
@@ -342,8 +316,24 @@ int32_t dji_motor_send_bus(can_id_e bus)
         }
         dji_motor_t *motor = (dji_motor_t *)base;
         uint8_t slot = 0;
-        int frame_index = tx_slot(base->type, motor->gm6020_mode, motor->id, &slot);
+        int frame_index = -1;
 
+        if (motor->id != 0u)
+        {
+            if (motor->base.type == MOTOR_TYPE_GM6020)
+            {
+                if (motor->id <= 7u && motor->gm6020_mode != GM6020_MOTOR_UNFIT)
+                {
+                    slot = (uint8_t)((motor->id - 1u) & 3u);
+                    frame_index = (motor->gm6020_mode == GM6020_MOTOR_CURRENT) ? ((motor->id <= 4u) ? 3 : 4) : ((motor->id <= 4u) ? 1 : 2);
+                }
+            }
+            else if (motor->id <= 8u && motor->gm6020_mode == GM6020_MOTOR_UNFIT)
+            {
+                slot = (uint8_t)((motor->id - 1u) & 3u);
+                frame_index = (motor->id <= 4u) ? 0 : 1;
+            }
+        }
         if (frame_index < 0)                                /* register 时已校验，这里只是防御 */
         {
             continue;
@@ -376,6 +366,11 @@ int32_t dji_motor_send_bus(can_id_e bus)
         }
     }
     return sent_count;
+}
+
+static bool is_dji_motor_type(motor_type_e type)
+{
+    return type == MOTOR_TYPE_M3508 || type == MOTOR_TYPE_M2006 || type == MOTOR_TYPE_GM6020;
 }
 
 #ifdef CONFIG_COMPONENT_SHELL
