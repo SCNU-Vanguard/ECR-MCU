@@ -1,5 +1,5 @@
 /* 底盘：CAN1 四个 m3508，全向轮，速度环。速度读 operate，前后左右是云台坐标系。
- * 导航打开且上位机给出非零速度时改跟上位机速度；上位机速度全为 0 或没收到时仍用手动速度。
+ * 上位机给出非零速度时改跟上位机速度；否则仍用手动速度。
  * yaw 电机多圈角度把它们旋到车体坐标。失能时输出关掉。
  * 功率只限制这四个轮。超电在 CAN2。 */
 #include <math.h>
@@ -49,26 +49,22 @@ static void wheels_set_active(bool active)
     wheels_on = active;
 }
 
-/* 默认用手动速度。导航打开且上位机给出了非零速度时才换成上位机速度。 */
+/* 默认用手动速度。上位机给出了非零速度时才换成上位机速度。 */
 static void chassis_command(const operate_snap_t *op, float *forward_m_s, float *right_m_s, float *spin_rad_s)
 {
+    host_nav_speed_t host_nav;
+
     *forward_m_s = op->forward_m_s;
     *right_m_s = op->right_m_s;
     *spin_rad_s = op->spin_rad_s;
-#ifdef CONFIG_CDD_HOST_NAV
-    if (op->use_nav)
+    if (op->use_nav &&
+        host_load(HOST_CMD_NAV_SPEED, &host_nav, sizeof host_nav) &&
+        (host_nav.forward_m_s != 0.0f || host_nav.right_m_s != 0.0f || host_nav.spin_rad_s != 0.0f))
     {
-        host_nav_speed_t host_nav;
-
-        if (host_transfer(HOST_CMD_NAV_SPEED, &host_nav, sizeof host_nav) == ERR_OK &&
-            (host_nav.forward_m_s != 0.0f || host_nav.right_m_s != 0.0f || host_nav.spin_rad_s != 0.0f))
-        {
-            *forward_m_s = host_nav.forward_m_s;
-            *right_m_s = host_nav.right_m_s;
-            *spin_rad_s = host_nav.spin_rad_s;
-        }
+        *forward_m_s = host_nav.forward_m_s;
+        *right_m_s = host_nav.right_m_s;
+        *spin_rad_s = host_nav.spin_rad_s;
     }
-#endif
 }
 
 static float chassis_power_limit_w(void)

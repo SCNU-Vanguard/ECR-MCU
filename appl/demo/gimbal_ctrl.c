@@ -11,6 +11,7 @@
 #include "cdd/imu/ins/ins.h"
 #include "cdd/motor/motor_init.h"
 #include "cdd/host/host.h"
+#include "cdd/referee/referee.h"
 #include "component/chassis/omni/omni.h"
 #include "host_config.h"
 #include "chassis_config.h"
@@ -41,13 +42,12 @@ static float clamp_pitch(float angle)
     return angle;
 }
 
-/* 取自瞄目标。视觉已锁定且 pitch、yaw 不全为 0 才返回 true。没开 AIM 时恒为 false。 */
-#ifdef CONFIG_CDD_HOST_AIM
+/* 取自瞄目标。视觉已锁定且 pitch、yaw 不全为 0 才返回 true。 */
 static bool aim_target_get(float *pitch_rad, float *yaw_rad)
 {
     host_aim_target_t aim;
 
-    if (host_transfer(HOST_CMD_AIM_TARGET, &aim, sizeof aim) != ERR_OK)
+    if (!host_load(HOST_CMD_AIM_TARGET, &aim, sizeof aim))
     {
         return false;
     }
@@ -59,14 +59,29 @@ static bool aim_target_get(float *pitch_rad, float *yaw_rad)
     *yaw_rad = aim.yaw_rad;
     return true;
 }
-#else
-static bool aim_target_get(float *pitch_rad, float *yaw_rad)
+
+static void host_cache_store(void)
 {
-    (void)pitch_rad;
-    (void)yaw_rad;
-    return false;
+    host_aim_attitude_t current;
+    host_nav_state_t nav = {0};
+    referee_info_t referee;
+
+    if (!gimbal_attitude.valid)
+    {
+        return;
+    }
+    current.roll_rad = gimbal_attitude.roll_rad;
+    current.pitch_rad = gimbal_attitude.pitch_rad;
+    current.yaw_rad = gimbal_attitude.yaw_rad;
+    host_store(HOST_CMD_AIM_ATTITUDE, &current, sizeof current);
+
+    referee_get(&referee);
+    nav.hp = referee.performance.current_hp;
+    nav.roll_rad = gimbal_attitude.roll_rad;
+    nav.pitch_rad = gimbal_attitude.pitch_rad;
+    nav.yaw_rad = gimbal_attitude.yaw_rad;
+    host_store(HOST_CMD_NAV_STATE, &nav, sizeof nav);
 }
-#endif
 
 static bool wheel_rates(float wheel_rad_s[CHASSIS_WHEEL_COUNT])
 {
@@ -122,6 +137,7 @@ static void gimbal_ctrl_run(void *argument)
 
     (void)argument;
     ins_get_attitude(&gimbal_attitude);
+    host_cache_store();
     /* 本拍只取一次快照，seq 与增量来自同一次发布。 */
     if (operate_get_snapshot(&op) != ERR_OK)
     {
