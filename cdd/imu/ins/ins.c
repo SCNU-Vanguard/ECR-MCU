@@ -1,6 +1,6 @@
 /* 惯导任务。数据源由 ins_config.h 的 INS_IMU 选择。
  * BMI088：DRDY 中断 -> SPI DMA -> 帧回调里 event_post_isr -> 本任务换算、标定、ahrs_update。
- *   超时 100 ms 没有新帧就 bmi088_recover。启用加热时，温度进窗口之前不开始解算。
+ *   超时 100 ms 没有新帧就 bmi088_recover。打开 CONFIG_CDD_IMU_BMI088_HEATER 时，温度进窗口之前不开始解算。
  * HI05R3：经 HI05R3_BUS 指定的 CAN 总线收 J1939。USE_DEVICE_ATTITUDE 为 0 时由角速度帧驱动 ahrs_update，为 1 时等三类帧齐备后使用模块四元数。
  * shell：ins_info 看姿态和统计，ins_imu 看最近一帧物理量。 */
 #include <math.h>
@@ -49,7 +49,7 @@
 #error "INS_ASSUME_STATIONARY must be 0 or 1"
 #endif
 
-#ifdef CONFIG_CDD_IMU_HEATER
+#ifdef CONFIG_CDD_IMU_BMI088_HEATER
 #define INS_TEMP_ENABLE_MIN_C       (HEATER_TARGET_C - 2.0f)
 #define INS_TEMP_ENABLE_MAX_C       (HEATER_TARGET_C + 2.0f)
 #define INS_TEMP_SETTLE_US          2500000u
@@ -452,7 +452,7 @@ static int32_t ins_init(void)
  * 没启用加热：不依赖温度寄存器，直接允许；这时零偏要按不加热的状态重新标定。 */
 static bool temperature_in_window(const bmi088_frame_t *frame)
 {
-#ifdef CONFIG_CDD_IMU_HEATER
+#ifdef CONFIG_CDD_IMU_BMI088_HEATER
     const float temperature_c = 0.125f * (float)frame->temperature_raw + 23.0f;
 
     return frame->temperature_sequence > 0u &&
@@ -467,7 +467,7 @@ static bool temperature_in_window(const bmi088_frame_t *frame)
 /* 温度进窗口后还要稳定 INS_TEMP_SETTLE_US 才开闸门。没启用加热时不用等。 */
 static bool temperature_settled(uint32_t gyro_timestamp_us)
 {
-#ifdef CONFIG_CDD_IMU_HEATER
+#ifdef CONFIG_CDD_IMU_BMI088_HEATER
     return (uint32_t)(gyro_timestamp_us - ins_temperature_ready_since_us) >= INS_TEMP_SETTLE_US;
 #else
     (void)gyro_timestamp_us;

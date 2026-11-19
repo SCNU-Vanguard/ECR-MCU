@@ -1,7 +1,11 @@
 #include "cdd/imu/bmi088/heater.h"
+#include "cdd/imu/bmi088/bmi088.h"
 #include "ins_config.h"
+#include "osal/period.h"
 #include "bsp/pwm/bsp_pwm.h"
+#include "component/common/initcall.h"
 #include "component/common/err.h"
+#include "component/log/log.h"
 #include "component/pid/pid.h"
 
 #define PPM_FULL_SCALE      1000000.0f
@@ -134,3 +138,90 @@ bool heater_cutoff_active(void)
 {
     return cutoff_active;
 }
+
+/* 10 Hz：读 BMI088 最近一次有效温度，做预热 + PID 恒温。
+ * 温度超过 HEATER_STALE_LIMIT_CYCLES 个周期没有更新就关加热，避免没有反馈时一直加热。 */
+#define HEATER_STALE_LIMIT_CYCLES   5u
+
+static uint32_t last_temperature_sequence;
+static uint32_t stale_cycles;
+static bool heater_ready;
+
+static int32_t heater_module_init(void)
+{
+    int32_t ret = heater_init();
+
+    heater_ready = (ret == ERR_OK);
+    if (!heater_ready)
+    {
+        LOGE("init failed: %d", (int)ret);
+    }
+    return ret;
+}
+INIT_CDD_STAGE2(heater_module_init);
+
+static void heater_run(void *argument)
+{
+    float temperature_c;
+    uint32_t temperature_sequence;
+
+    (void)argument;
+    if (!heater_ready)
+    {
+        return;
+    }
+    if (bmi088_get_temperature(&temperature_c, &temperature_sequence) &&
+        temperature_sequence != last_temperature_sequence)
+    {
+        last_temperature_sequence = temperature_sequence;
+        stale_cycles = 0u;
+        heater_step(temperature_c);
+        return;
+    }
+    if (stale_cycles < HEATER_STALE_LIMIT_CYCLES)
+    {
+        stale_cycles++;
+    }
+    if (stale_cycles >= HEATER_STALE_LIMIT_CYCLES)
+    {
+        heater_off();
+    }
+}
+PERIOD_TASK_DEFINE(heater_task, OS_FREQ_10HZ, OS_PRIORITY_LOW, OS_STACK_SMALL, heater_run, NULL);
+
+#ifdef CONFIG_COMPONENT_SHELL
+#include "component/shell/shell_cmd.h"
+
+static bool heater_input_stale(void)
+{
+    return stale_cycles >= HEATER_STALE_LIMIT_CYCLES;
+}
+
+static void print_milli(const char *label, float value, const char *unit)
+{
+    long milli = (long)(value * 1000.0f + (value >= 0.0f ? 0.5f : -0.5f));
+    const char *sign = (milli < 0) ? "-" : "";
+
+    if (milli < 0)
+    {
+        milli = -milli;
+    }
+    shell_out("  %s = %s%ld.%03ld %s\r\n", label, sign, milli / 1000, milli % 1000, unit);
+}
+
+static int shell_heater(int argc, char *argv[])
+{
+    (void)argc;
+    (void)argv;
+    uint32_t duty_ppm_now = heater_duty_ppm();
+
+    shell_out("heater: ready=%d phase=%s input_stale=%d cutoff=%d\r\n", (int)heater_ready,
+              heater_preheating() ? "preheat" : "hold", (int)heater_input_stale(), (int)heater_cutoff_active());
+    print_milli("target", heater_target_c(), "C");
+    print_milli("temperature", heater_last_temperature_c(), "C");
+    shell_out("  duty = %lu.%02lu %%\r\n", (unsigned long)(duty_ppm_now / 10000u),
+              (unsigned long)((duty_ppm_now % 10000u) / 100u));
+    return 0;
+}
+SHELL_CMD(heater, shell_heater, show_heater_status)
+#endif

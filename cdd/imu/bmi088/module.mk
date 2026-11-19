@@ -1,1 +1,2 @@
-obj-$(CONFIG_CDD_IMU_BMI088) += bmi088.o heater.o
+obj-$(CONFIG_CDD_IMU_BMI088) += bmi088.o
+obj-$(CONFIG_CDD_IMU_BMI088_HEATER) += heater.o
