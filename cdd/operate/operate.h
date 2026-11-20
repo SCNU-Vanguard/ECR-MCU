@@ -59,16 +59,10 @@ enum
     OPERATE_IN_COUNT
 };
 
-/* 积分用的帧间隔上限。操作任务被拖住时，停顿的整段时间不能一次积成一个云台大步长。 */
-#ifndef OPERATE_FRAME_INTERVAL_MAX_S
-#define OPERATE_FRAME_INTERVAL_MAX_S    0.05f
-#endif
-
 /* 一次发布的整份快照，唯一的对外接口，改字段只改这里和 operate.c。
- * forward / right 是 m/s，spin 是 rad/s，带正负。
- * yaw_delta 向右为负，pitch_delta 向上为正，是这一帧要转的角。
- * 图传遥控和 DT7 只取摇杆通道，角速度乘上一帧时间戳到这一帧的时间。图传键盘只加鼠标。
- * seq 每来一帧输入加一。seq 变了再把这份增量加上去。 */
+ * forward / right 是 m/s，spin、yaw_rate、pitch_rate 是 rad/s，带正负。
+ * yaw_rate 向右为负，pitch_rate 向上为正。摇杆杆量和鼠标计数乘灵敏度都写进这两个转速。
+ * 应用层按自己的任务周期把转速加到目标角上。 */
 typedef struct
 {
     bool     online;
@@ -78,9 +72,8 @@ typedef struct
     float    spin_rad_s;
     bool     use_nav;
     bool     use_aim;
-    float    yaw_delta_rad;
-    float    pitch_delta_rad;
-    uint32_t seq;
+    float    yaw_rate_rad_s;
+    float    pitch_rate_rad_s;
     bool     friction;
     bool     shoot;
     bool     custom1;
@@ -89,7 +82,6 @@ typedef struct
     bool     custom4;
 } operate_snap_t;
 
-/* 一次拷出整份快照，seq 和增量、速度、使能来自同一次发布。控制周期里应取一次再用各字段。
- * out 为空时返回 ERR_INVAL。 */
+/* 一次拷出整份快照。控制周期里应取一次再用各字段。out 为空时返回 ERR_INVAL。 */
 int32_t operate_get_snapshot(operate_snap_t *out);
 #endif

@@ -1,8 +1,10 @@
-/* 云台：CAN2，pitch = gm6020，yaw = j4310。角度都用本板 IMU。
- * yaw 速度环仍用电机自己的转速。四个轮速做全向轮逆解算，自旋取负号作为速度前馈。
+/* 云台：CAN2，pitch = gm6020，yaw = j4310。角度和转速都用电机自己的反馈。
+ * 四个轮速做全向轮逆解算，自旋取负号作为 yaw 速度前馈。
  * 自瞄打开、视觉锁定且给出的 pitch/yaw 不全为 0 时跟自瞄，否则用手。
- * 手控增量来自 operate，seq 变了才加一次。
- * 失能或 IMU 无效时输出关掉。 */
+ * 手控是 operate 给出的目标转速，每个任务周期加到电机目标角上。
+ * 失能时两台一起关掉。打开后各发控制帧，谁收到反馈谁先对齐再积分，互不等待。
+ * 一台没反馈或掉线时，另一台照常跟手。
+ * IMU 只上报给上位机，不参与这两个环。 */
 #include <string.h>
 #include "osal/period.h"
 #include "component/common/initcall.h"
@@ -16,17 +18,18 @@
 #include "host_config.h"
 #include "chassis_config.h"
 
-#define GIMBAL_PITCH_MAX_RAD     0.45f    /* pitch 目标角上限 */
-#define GIMBAL_PITCH_MIN_RAD    -0.45f    /* pitch 目标角下限，和上限不必对称 */
-#define GIMBAL_PITCH_GYRO_AXIS   1u       /* ins_attitude_t.gyro_rad_s[] 里 pitch 轴的下标 */
+#define GIMBAL_PITCH_MAX_RAD       0.45f    /* pitch 目标角上限，相对电机零点 */
+#define GIMBAL_PITCH_MIN_RAD      -0.45f    /* pitch 目标角下限，和上限不必对称 */
+#define GIMBAL_CTRL_PERIOD_S      (1.0f / (float)OS_FREQ_1000HZ) /* 与 gimbal_ctrl_task 同周期 */
 
 static const omni_geometry_t chassis_geometry = CHASSIS_GEOMETRY_INIT;
 static ins_attitude_t gimbal_attitude;
-static bool gimbal_on;   /* pitch、yaw 电机输出开着。关着的下一拍先对齐当前角 */
-static bool was_locked;  /* 上一拍自瞄锁定。刚退出时先对齐当前角 */
+static bool gimbal_on;      /* 操作手使能后两台输出都开着。关的是一起关，动起来各看各的反馈 */
+static bool pitch_aligned;  /* pitch 目标已对齐电机角度。没对齐之前不积分 */
+static bool yaw_aligned;
+static bool was_locked;     /* 上一拍自瞄锁定。刚退出时各自先对齐当前角 */
 static float pitch_target;
 static float yaw_target;
-static float yaw_measure;
 static float yaw_rate_ff;
 
 static float clamp_pitch(float angle)
@@ -111,11 +114,53 @@ static void gimbal_set_active(bool active)
     gimbal_on = active;
 }
 
+/* 一台的目标角，和另一台无关。还没收到过反馈就返回 false，本拍不写这台的目标。
+ * 刚对齐或刚退出自瞄：目标等于当前角。自瞄中用给定角。手控且在线：转速乘周期累加。掉线则保持。 */
+static bool axis_follow(motor_t *motor, bool *aligned, float *target,
+                        bool locked, float aim_rad, float rate, bool pitch_limit)
+{
+    if (!*aligned)
+    {
+        if (!motor->got_first)
+        {
+            return false;
+        }
+        *target = motor->single_angle_rad;
+        *aligned = true;
+    }
+    else if (locked)
+    {
+        *target = aim_rad;
+    }
+    else if (was_locked)
+    {
+        *target = motor->single_angle_rad;
+    }
+    else if (motor_online(motor))
+    {
+        *target += rate * GIMBAL_CTRL_PERIOD_S;
+    }
+    if (pitch_limit)
+    {
+        *target = clamp_pitch(*target);
+    }
+    return true;
+}
+
+static void yaw_spin_ff(void)
+{
+    float wheel_rad_s[CHASSIS_WHEEL_COUNT];
+    chassis_speed_t speed;
+
+    yaw_rate_ff = 0.0f;
+    if (wheel_rates(wheel_rad_s) && omni_inverse(&chassis_geometry, wheel_rad_s, &speed) == ERR_OK)
+    {
+        yaw_rate_ff = -speed.spin_rad_s;
+    }
+}
+
 static int32_t gimbal_ctrl_init(void)
 {
-    motor_bind_angle_feedback(&pitch_gm6020.base, &gimbal_attitude.pitch_rad);
-    motor_bind_speed_feedback(&pitch_gm6020.base, &gimbal_attitude.gyro_rad_s[GIMBAL_PITCH_GYRO_AXIS]);
-    motor_bind_angle_feedback(&yaw_j4310.base, &yaw_measure);
     motor_bind_speed_feedforward(&yaw_j4310.base, &yaw_rate_ff);
     return dm_motor_enable(&yaw_j4310);
 }
@@ -123,72 +168,51 @@ INIT_APP_STAGE2(gimbal_ctrl_init);
 
 static void gimbal_ctrl_run(void *argument)
 {
-    float wheel_rad_s[CHASSIS_WHEEL_COUNT];
-    chassis_speed_t speed;
-    static uint32_t applied_seq;
     operate_snap_t op;
-    float yaw_delta_rad = 0.0f;
-    float pitch_delta_rad = 0.0f;
     float aim_pitch_rad = 0.0f;
     float aim_yaw_rad = 0.0f;
-    bool enabled;
     bool locked;
-    bool usable;
 
     (void)argument;
     ins_get_attitude(&gimbal_attitude);
     host_cache_store();
-    /* 本拍只取一次快照，seq 与增量来自同一次发布。 */
+    /* 本拍只取一次，转速和开关来自同一次发布。 */
     if (operate_get_snapshot(&op) != ERR_OK)
     {
         memset(&op, 0, sizeof op);
-        op.seq = applied_seq;
-    }
-    enabled = op.enabled;
-    if (op.seq != applied_seq)
-    {
-        yaw_delta_rad = op.yaw_delta_rad;
-        pitch_delta_rad = op.pitch_delta_rad;
-        applied_seq = op.seq;
     }
     locked = op.use_aim && aim_target_get(&aim_pitch_rad, &aim_yaw_rad);
-    usable = enabled && gimbal_attitude.valid;
 
-    yaw_rate_ff = 0.0f;
-    if (usable)
+    if (!op.enabled)
     {
-        if (locked)
+        if (gimbal_on)
         {
-            pitch_target = clamp_pitch(aim_pitch_rad);
-            yaw_target = aim_yaw_rad;
+            gimbal_set_active(false);
         }
-        else if (!gimbal_on || was_locked)
-        {
-            pitch_target = gimbal_attitude.pitch_rad;
-            yaw_target = gimbal_attitude.yaw_rad;
-        }
-        else
-        {
-            pitch_target = clamp_pitch(pitch_target + pitch_delta_rad);
-            yaw_target += yaw_delta_rad;
-        }
-        yaw_measure = gimbal_attitude.yaw_rad;
-        if (wheel_rates(wheel_rad_s) && omni_inverse(&chassis_geometry, wheel_rad_s, &speed) == ERR_OK)
-        {
-            yaw_rate_ff = -speed.spin_rad_s;
-        }
+        pitch_aligned = false;
+        yaw_aligned = false;
+        was_locked = false;
+        yaw_rate_ff = 0.0f;
+    }
+    else
+    {
         if (!gimbal_on)
         {
             gimbal_set_active(true);
         }
-        (void)motor_set_target(&pitch_gm6020.base, pitch_target);
-        (void)motor_set_target(&yaw_j4310.base, yaw_target);
+        if (axis_follow(&pitch_gm6020.base, &pitch_aligned, &pitch_target,
+                        locked, aim_pitch_rad, op.pitch_rate_rad_s, true))
+        {
+            (void)motor_set_target(&pitch_gm6020.base, pitch_target);
+        }
+        if (axis_follow(&yaw_j4310.base, &yaw_aligned, &yaw_target,
+                        locked, aim_yaw_rad, op.yaw_rate_rad_s, false))
+        {
+            (void)motor_set_target(&yaw_j4310.base, yaw_target);
+        }
+        was_locked = locked && (pitch_aligned || yaw_aligned);
+        yaw_spin_ff();
     }
-    else if (gimbal_on)
-    {
-        gimbal_set_active(false);
-    }
-    was_locked = locked && usable;
 
     (void)motor_compute_bus(CAN_BUS2);
     (void)motor_send_bus(CAN_BUS2);

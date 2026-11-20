@@ -37,6 +37,6 @@
 /* p_max 必须与电机里设置的一致；上位机只能设两位小数，J4310 取 3.14 近似 pi（上报位置一个周期 = 6.28 rad，多圈累计按 2*p_max 一圈） */
 
 #define ROBOT_DM_MOTOR_CONTROL_TABLE(X) \
-    X(yaw_j4310, MOTOR_CONTROL_ANGLE, 15.0f, 0.0f, 0.0f, 0.0f, 5.0f, 5.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 5.0f, 5.0f, 0.0f, 0.0f)
-/* 名字     , 模式               , 角kp , 角ki, 角kd, 角kf, 角输出, 角积分, 角前馈, 角死区, 速kp, 速ki, 速kd, 速kf, 速输出, 速积分, 速前馈, 速死区 */
+    X(yaw_j4310, MOTOR_CONTROL_ANGLE, 50.0f, 0.0f, 1.0f, 0.0f, 20.0f, 20.0f, 0.0f, 0.0f, 0.5f, 0.02f, 0.0f, 0.0f, 10.0f, 10.0f, 0.0f, 0.0f)
+/* 名字     , 模式                   , 角kp , 角ki, 角kd, 角kf, 角输出, 角积分, 角前馈, 角死区, 速kp, 速ki, 速kd, 速kf, 速输出, 速积分, 速前馈, 速死区 */
 #endif

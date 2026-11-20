@@ -1,4 +1,5 @@
 #include "cdd/motor/motor.h"
+#include "cdd/motor/motor_pid_tune.h"
 #include "component/common/err.h"
 
 /* 按总线计算/发送的分发：按电机型号交给 dji_motor / dm_motor。放在单独的文件里，是因为它要同时依赖这两个驱动，
@@ -53,6 +54,7 @@ int32_t motor_compute_bus(can_id_e bus)
     {
         return ERR_INVAL;
     }
+    motor_pid_tune_pre_compute(bus);
 #ifdef CONFIG_CDD_MOTOR_DJI_MOTOR
     computed_count += dji_motor_compute_bus(bus);
 #endif
@@ -62,6 +64,7 @@ int32_t motor_compute_bus(can_id_e bus)
 #ifdef CONFIG_CDD_MOTOR_LK_MOTOR
     computed_count += lk_motor_compute_bus(bus);
 #endif
+    motor_pid_tune_post_compute(bus);
     return computed_count;
 }
 

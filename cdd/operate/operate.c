@@ -1,7 +1,6 @@
 #include <string.h>
 #include "cdd/operate/operate.h"
 #include "operate_config.h"
-#include "bsp/tick/bsp_tick.h"
 #include "osal/period.h"
 #include "osal/osal.h"
 
@@ -27,9 +26,6 @@
 #define STICK_FULL  660.0f
 
 static operate_snap_t published;        /* 只在 operate_task 里写，读用 operate_get_snapshot */
-static uint32_t       last_frames;
-static uint64_t       frame_us;
-static bool           frame_stamp;
 
 /* ---- 键盘映射 ---- */
 #if OPERATE_USE_KEYMAP
@@ -78,7 +74,7 @@ static bool reg_is_on(unsigned id)
     return id < OPERATE_IN_COUNT && reg_on[id];
 }
 
-/* 新的一帧才采样键。按住跟着键，切换在上升沿翻转。 */
+/* 按住跟着键，切换在上升沿翻转。同一帧重复采样不会再次翻转。 */
 static void keymap_sample(uint32_t bits)
 {
     unsigned i;
@@ -158,7 +154,7 @@ static void publish(const operate_snap_t *out)
     os_irq_restore(irq_key);
 }
 
-/* 离线时发布全零快照，seq 保留，切换锁存和时间戳清掉。返回 true 表示本周期到此为止。 */
+/* 离线时发布全零快照，切换锁存清掉。返回 true 表示本周期到此为止。 */
 static bool publish_if_offline(bool online)
 {
     operate_snap_t out;
@@ -168,61 +164,18 @@ static bool publish_if_offline(bool online)
         return false;
     }
     memset(&out, 0, sizeof out);
-    out.seq = published.seq;
 #if OPERATE_USE_KEYMAP
     keymap_clear();
 #endif
-    frame_stamp = false;
     publish(&out);
     return true;
 }
 
-/* 输入帧计数变了才算新帧。 */
-static bool take_frame(uint32_t frames)
+/* 鼠标计数乘灵敏度，加进云台转速。输入侧会把上一帧计数留到下一帧。 */
+static void add_mouse_rate(operate_snap_t *out, int16_t mouse_x, int16_t mouse_y)
 {
-    bool is_new = frames != last_frames;
-
-    last_frames = frames;
-    return is_new;
-}
-
-/* 上一帧时间戳到现在的秒数。还没有时间戳时返回 0，并记下当前时刻。 */
-static float frame_interval_s(void)
-{
-    uint64_t now = bsp_tick_us();
-    float interval = 0.0f;
-
-    if (frame_stamp)
-    {
-        interval = (float)(now - frame_us) * 1.0e-6f;
-    }
-    frame_us = now;
-    frame_stamp = true;
-    return interval;
-}
-
-/* 新帧才推进 seq。增量是上一帧到这一帧摇杆转过的角，再加上这一帧鼠标。
- * 没有新帧时增量保持上一次，用 seq 判断是否已经消费过。 */
-static void note_frame(operate_snap_t *out, bool new_frame, float yaw_rate, float pitch_rate,
-                       float mouse_yaw, float mouse_pitch)
-{
-    float interval;
-
-    if (!new_frame)
-    {
-        out->yaw_delta_rad = published.yaw_delta_rad;
-        out->pitch_delta_rad = published.pitch_delta_rad;
-        return;
-    }
-    interval = frame_interval_s();
-    /* 任务被拖住或链路短暂卡顿时，间隔会很长。限幅后只积一个正常步长，避免云台一次猛转。 */
-    if (interval > OPERATE_FRAME_INTERVAL_MAX_S)
-    {
-        interval = OPERATE_FRAME_INTERVAL_MAX_S;
-    }
-    out->yaw_delta_rad = yaw_rate * interval + mouse_yaw;
-    out->pitch_delta_rad = pitch_rate * interval + mouse_pitch;
-    out->seq = published.seq + 1u;
+    out->yaw_rate_rad_s += -(float)mouse_x * OPERATE_MOUSE_YAW_RAD_S_PER_COUNT;
+    out->pitch_rate_rad_s += (float)mouse_y * OPERATE_MOUSE_PITCH_RAD_S_PER_COUNT;
 }
 
 /* ---- 三种来源，各填一份快照 ---- */
@@ -231,7 +184,6 @@ static void from_dt7(void)
 {
     dt7_data_t in;
     operate_snap_t out;
-    bool new_frame;
 
     dt7_get(&in);
     if (publish_if_offline(in.online))
@@ -239,7 +191,6 @@ static void from_dt7(void)
         return;
     }
     memset(&out, 0, sizeof out);
-    out.seq = published.seq;
     out.online = true;
     /* 左开关：上或中为使能，上档同时开自瞄和导航。右开关：上或中为摩擦轮，上为拨弹。 */
     out.enabled = in.switch_left == DT7_SWITCH_UP || in.switch_left == DT7_SWITCH_MID;
@@ -250,16 +201,11 @@ static void from_dt7(void)
     out.forward_m_s = stick(in.channel[3], OPERATE_MOVE_MAX_M_S);
     out.right_m_s = stick(in.channel[2], OPERATE_MOVE_MAX_M_S);
     out.spin_rad_s = wheel_spin(in.wheel);
-    new_frame = take_frame(in.frames);
-    if (new_frame)
-    {
-        keymap_sample(pointer_bits(in.key, in.mouse_left, in.mouse_right, 0u));
-    }
+    out.yaw_rate_rad_s = stick(in.channel[0], -OPERATE_YAW_RATE_RAD_S);
+    out.pitch_rate_rad_s = stick(in.channel[1], OPERATE_PITCH_RATE_RAD_S);
+    keymap_sample(pointer_bits(in.key, in.mouse_left, in.mouse_right, 0u));
     keymap_fill_custom(&out);
-    note_frame(&out, new_frame,
-               stick(in.channel[0], -OPERATE_YAW_RATE_RAD_S),
-               stick(in.channel[1], OPERATE_PITCH_RATE_RAD_S),
-               0.0f, 0.0f);
+    add_mouse_rate(&out, in.mouse_x, in.mouse_y);
     publish(&out);
 }
 #elif OPERATE_MODE == OPERATE_MODE_IMGTRANS_RC
@@ -269,7 +215,6 @@ static void from_imgtrans_rc(void)
 {
     imgtrans_data_t in;
     operate_snap_t out;
-    bool new_frame;
 
     imgtrans_get(&in);
     if (publish_if_offline(in.online))
@@ -277,7 +222,6 @@ static void from_imgtrans_rc(void)
         return;
     }
     memset(&out, 0, sizeof out);
-    out.seq = published.seq;
     out.online = true;
     out.enabled = in.pause != 0u;
     out.friction = in.custom_left != 0u;
@@ -291,11 +235,9 @@ static void from_imgtrans_rc(void)
     out.forward_m_s = stick(in.channel[3], OPERATE_MOVE_MAX_M_S);
     out.right_m_s = stick(in.channel[2], OPERATE_MOVE_MAX_M_S);
     out.spin_rad_s = wheel_spin(in.wheel);
-    new_frame = take_frame(in.frames);
-    note_frame(&out, new_frame,
-               stick(in.channel[0], -OPERATE_YAW_RATE_RAD_S),
-               stick(in.channel[1], OPERATE_PITCH_RATE_RAD_S),
-               0.0f, 0.0f);
+    out.yaw_rate_rad_s = stick(in.channel[0], -OPERATE_YAW_RATE_RAD_S);
+    out.pitch_rate_rad_s = stick(in.channel[1], OPERATE_PITCH_RATE_RAD_S);
+    add_mouse_rate(&out, in.mouse_x, in.mouse_y);
     publish(&out);
 }
 #else
@@ -304,7 +246,6 @@ static void from_imgtrans_key(void)
 {
     imgtrans_data_t in;
     operate_snap_t out;
-    bool new_frame;
     float forward = 0.0f;
     float right = 0.0f;
     float magnitude;
@@ -315,13 +256,8 @@ static void from_imgtrans_key(void)
         return;
     }
     memset(&out, 0, sizeof out);
-    out.seq = published.seq;
     out.online = true;
-    new_frame = take_frame(in.frames);
-    if (new_frame)
-    {
-        keymap_sample(pointer_bits(in.key, in.mouse_left, in.mouse_right, in.mouse_middle));
-    }
+    keymap_sample(pointer_bits(in.key, in.mouse_left, in.mouse_right, in.mouse_middle));
     out.enabled = reg_is_on(OPERATE_IN_ENABLE);
     out.use_aim = reg_is_on(OPERATE_IN_AIM);
     out.use_nav = reg_is_on(OPERATE_IN_NAV);
@@ -342,9 +278,7 @@ static void from_imgtrans_key(void)
     out.forward_m_s = forward * OPERATE_MOVE_MAX_M_S;
     out.right_m_s = right * OPERATE_MOVE_MAX_M_S;
     out.spin_rad_s = reg_is_on(OPERATE_IN_SPIN) ? OPERATE_SPIN_RAD_S : 0.0f;
-    note_frame(&out, new_frame, 0.0f, 0.0f,
-               -(float)in.mouse_x * OPERATE_MOUSE_YAW_RAD_PER_COUNT,
-               (float)in.mouse_y * OPERATE_MOUSE_PITCH_RAD_PER_COUNT);
+    add_mouse_rate(&out, in.mouse_x, in.mouse_y);
     publish(&out);
 }
 #endif
@@ -360,7 +294,7 @@ static void operate_run(void *argument)
     from_imgtrans_key();
 #endif
 }
-/* 输入大约 100 Hz。200 Hz 轮询每帧能看到一次，摇杆角用时间戳，不靠这个周期。 */
+/* 输入大约 100 Hz。200 Hz 轮询每帧能看到一次。云台转速每个周期按当前摇杆和鼠标发布。 */
 PERIOD_TASK_DEFINE(operate_task, OS_FREQ_200HZ, OS_PRIORITY_MEDIUM, OS_STACK_SMALL, operate_run, NULL);
 
 int32_t operate_get_snapshot(operate_snap_t *out)
@@ -390,16 +324,15 @@ static int shell_operate(int argc, char *argv[])
     {
         return -1;
     }
-    shell_out("operate: online=%d enabled=%d aim=%d nav=%d fric=%d shoot=%d custom=%d%d%d%d seq=%lu\r\n",
+    shell_out("operate: online=%d enabled=%d aim=%d nav=%d fric=%d shoot=%d custom=%d%d%d%d\r\n",
               (int)s.online, (int)s.enabled, (int)s.use_aim, (int)s.use_nav,
               (int)s.friction, (int)s.shoot,
-              (int)s.custom1, (int)s.custom2, (int)s.custom3, (int)s.custom4,
-              (unsigned long)s.seq);
+              (int)s.custom1, (int)s.custom2, (int)s.custom3, (int)s.custom4);
     shell_out("  move=%d %d mm/s spin=%d mrad/s\r\n",
               (int)(s.forward_m_s * 1000.0f), (int)(s.right_m_s * 1000.0f),
               (int)(s.spin_rad_s * 1000.0f));
-    shell_out("  dyaw=%d mrad dpitch=%d mrad\r\n",
-              (int)(s.yaw_delta_rad * 1000.0f), (int)(s.pitch_delta_rad * 1000.0f));
+    shell_out("  yaw=%d mrad/s pitch=%d mrad/s\r\n",
+              (int)(s.yaw_rate_rad_s * 1000.0f), (int)(s.pitch_rate_rad_s * 1000.0f));
     return 0;
 }
 SHELL_CMD(operate, shell_operate, show_unified_operator_command)

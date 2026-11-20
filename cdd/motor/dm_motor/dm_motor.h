@@ -81,6 +81,7 @@ typedef struct
     float          velocity;         /* rad/s（未应用 reverse） */
     float          torque_nm;        /* N·m（未应用 reverse） */
     float          mos_temperature;  /* MOS 管温度，摄氏度 */
+    bool           enable_requested; /* dm_motor_enable 之后为真，dm_motor_disable 清掉 */
 } dm_motor_t;
 
 /* 在 INIT_APP_STAGE1 里调用（或更早），只做绑定（订阅 master_id 的反馈帧），不发送任何帧。
@@ -88,7 +89,7 @@ typedef struct
 int32_t dm_motor_register(dm_motor_t *motor, const dm_motor_config_t *config);
 
 /* 下面四个各发一帧命令帧（ID 与该模式的控制帧相同；TORQUE 用 MIT 的 tx_id）。返回 bsp_can_send 的结果：TX FIFO 满为 ERR_BUSY */
-int32_t dm_motor_enable(dm_motor_t *motor);          /* 使能：之后才响应控制帧 */
+int32_t dm_motor_enable(dm_motor_t *motor);          /* 使能：之后才响应控制帧。还没报使能时，每次发送都再补一帧 */
 int32_t dm_motor_disable(dm_motor_t *motor);         /* 失能 */
 int32_t dm_motor_set_zero(dm_motor_t *motor);        /* 把当前位置设为零点 */
 int32_t dm_motor_clear_error(dm_motor_t *motor);     /* 清除故障（如过热） */

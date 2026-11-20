@@ -240,12 +240,32 @@ static int32_t send_command(dm_motor_t *motor, uint8_t command)
 
 int32_t dm_motor_enable(dm_motor_t *motor)
 {
+    if (motor == NULL)
+    {
+        return ERR_INVAL;
+    }
+    motor->enable_requested = true;
     return send_command(motor, DM_MOTOR_COMMAND_ENABLE);
 }
 
 int32_t dm_motor_disable(dm_motor_t *motor)
 {
+    if (motor != NULL)
+    {
+        motor->enable_requested = false;
+    }
     return send_command(motor, DM_MOTOR_COMMAND_DISABLE);
+}
+
+/* 还没报使能就随本拍控制帧再补一帧。报使能后停止。故障码不重发，那要先清故障。 */
+static void retry_enable(dm_motor_t *motor)
+{
+    if (!motor->enable_requested || motor->state == DM_MOTOR_STATE_ENABLED ||
+        motor->state >= DM_MOTOR_STATE_FAULT_MIN)
+    {
+        return;
+    }
+    (void)send_command(motor, DM_MOTOR_COMMAND_ENABLE);
 }
 
 int32_t dm_motor_set_zero(dm_motor_t *motor)
@@ -478,6 +498,7 @@ int32_t dm_motor_send(dm_motor_t *motor)
     {
         return ERR_INVAL;
     }
+    retry_enable(motor);
     encode_frame(motor, &frame);
     return bsp_can_send(motor->base.bus, &frame);
 }

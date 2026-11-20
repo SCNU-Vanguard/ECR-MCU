@@ -17,8 +17,9 @@
 #define OPERATE_SPIN_RAD_S              2.0f
 #define OPERATE_STICK_DEADZONE          20
 #define OPERATE_WHEEL_DEADZONE          100
-#define OPERATE_MOUSE_YAW_RAD_PER_COUNT    0.002f
-#define OPERATE_MOUSE_PITCH_RAD_PER_COUNT  0.002f
+/* 鼠标灵敏度，rad/s 每计数。yaw 在 operate.c 里取负，向右为负。 */
+#define OPERATE_MOUSE_YAW_RAD_S_PER_COUNT    0.2f
+#define OPERATE_MOUSE_PITCH_RAD_S_PER_COUNT  0.2f
 
 #define OPERATE_REG_TABLE \
     OPERATE_REG(OPERATE_IN_ENABLE,   OPERATE_KEY_B,       OPERATE_AS_TOGGLE) \
