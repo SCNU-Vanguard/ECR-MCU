@@ -3,4 +3,3 @@ obj-$(CONFIG_APPL_SEC_INFANTRY_BUZZER_CTRL) += buzzer_ctrl.o
 obj-$(CONFIG_APPL_SEC_INFANTRY_CHASSIS_CTRL) += chassis_ctrl.o
 obj-$(CONFIG_APPL_SEC_INFANTRY_GIMBAL_CTRL) += gimbal_ctrl.o
 obj-$(CONFIG_APPL_SEC_INFANTRY_SHOOT_CTRL) += shoot_ctrl.o
-obj-$(CONFIG_APPL_SEC_INFANTRY_UI_CTRL) += ui_ctrl.o

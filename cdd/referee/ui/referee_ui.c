@@ -28,14 +28,12 @@ static void set_common(referee_ui_graph_t *graph, const char *name, uint32_t ope
     graph->color = color;
 }
 
-/* 整数和浮点的数值拆进图形结构末尾三个位域：低 10 位、中 11 位、高 11 位 */
+/* 整数和浮点的数值拆进图形结构末尾三个位域，见 referee_ui.h */
 static void set_number(referee_ui_graph_t *graph, int32_t value)
 {
-    uint32_t bits = (uint32_t)value;
-
-    graph->radius = bits & 0x3FFu;
-    graph->end_x = (bits >> 10) & 0x7FFu;
-    graph->end_y = (bits >> 21) & 0x7FFu;
+    graph->radius = REFEREE_UI_VALUE_RADIUS(value);
+    graph->end_x = REFEREE_UI_VALUE_END_X(value);
+    graph->end_y = REFEREE_UI_VALUE_END_Y(value);
 }
 
 void referee_ui_line(referee_ui_graph_t *graph, const char name[3], uint32_t operate, uint32_t layer, uint32_t color,

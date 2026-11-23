@@ -4,7 +4,8 @@
 
 /* 云台（MASTER）与底盘（SLAVE）的 RS485。USART2 硬件 DE，协议里不翻转收发脚。
  * 只有一问一答：云台按 INTERBOARD_TX_HZ 发出请求缓存，底盘回同一序号的应答缓存。底盘不主动发。
- * 要改本侧缓存时，先 load 整帧，只改自己的字段，再 store 整帧。单板兵种不要打开 CONFIG_CDD_INTERBOARD。
+ * 没有单独的应用任务。请求和应答缓存在各业务任务里填写，和上位机一样：先 load 整帧，只改自己的字段，再 store 整帧。
+ * 单板兵种不要打开 CONFIG_CDD_INTERBOARD。
  * 本板是云台还是底盘，在当前兵种的 interboard_config.h 里写 INTERBOARD_ROLE。
  *
  * 帧（小端）：0xA5 | 载荷长度 | 序号 | 载荷 | CRC16 低字节 | CRC16 高字节

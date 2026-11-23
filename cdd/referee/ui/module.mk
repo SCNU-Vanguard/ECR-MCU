@@ -1,1 +1,1 @@
-obj-$(CONFIG_CDD_REFEREE_UI) += referee_ui.o
+obj-$(CONFIG_CDD_REFEREE_UI) += referee_ui.o ui_reg.o

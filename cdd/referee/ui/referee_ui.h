@@ -3,10 +3,16 @@
 #include "cdd/referee/referee.h"
 
 /* 选手端 UI 绘图。分两步：先往图形结构里填内容（referee_ui_line 等），再 referee_ui_graph_refresh 发出去。
+ * 兵种图案的默认值在 robot/<兵种>/ui_config.h，应用层用 ui_reg.h 的 ui_set_* 改，发送在 ui 模块的 10 Hz 任务里。
+ * 这里是填协议和发送的底层接口。
  * 接收方是本机器人的选手端，ID 从 0x0201 里取；还没收到时发送函数返回 ERR_NODEV。
  * 0x0301 整体上行频率上限 10 Hz（删除、图形、字符串、机器人间通信共用），这里不限速。
  *
- * 图形名字 3 个字符，按原 UI 库的顺序填：第 1 个字符放在 name[2]。已有界面的名字是按这个顺序对上的。 */
+ * 图形名字 3 个字符，按原 UI 库的顺序填：第 1 个字符放在 name[2]。已有界面的名字是按这个顺序对上的。
+ * 整数和浮点的 32 位值拆进图形末尾：radius 低 10 位，end_x 中 11 位，end_y 高 11 位。 */
+#define REFEREE_UI_VALUE_RADIUS(v) (((uint32_t)(int32_t)(v)) & 0x3FFu)
+#define REFEREE_UI_VALUE_END_X(v)  ((((uint32_t)(int32_t)(v)) >> 10) & 0x7FFu)
+#define REFEREE_UI_VALUE_END_Y(v)  ((((uint32_t)(int32_t)(v)) >> 21) & 0x7FFu)
 
 /* 直线。start/end 是两端点 */
 void referee_ui_line(referee_ui_graph_t *graph, const char name[3], uint32_t operate, uint32_t layer, uint32_t color,

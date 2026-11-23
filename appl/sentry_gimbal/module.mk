@@ -2,4 +2,3 @@ obj-$(CONFIG_APPL_SENTRY_GIMBAL_LED_CTRL) += led_ctrl.o
 obj-$(CONFIG_APPL_SENTRY_GIMBAL_BUZZER_CTRL) += buzzer_ctrl.o
 obj-$(CONFIG_APPL_SENTRY_GIMBAL_GIMBAL_CTRL) += gimbal_ctrl.o
 obj-$(CONFIG_APPL_SENTRY_GIMBAL_SHOOT_CTRL) += shoot_ctrl.o
-obj-$(CONFIG_APPL_SENTRY_GIMBAL_INTERBOARD_CTRL) += interboard_ctrl.o
