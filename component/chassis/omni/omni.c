@@ -3,7 +3,7 @@
 
 #define OMNI_ROLLER_COS  0.70710678118f   /* 辊子 45°，cos(45°) */
 
-int32_t omni_solve(const omni_geometry_t *geometry, const chassis_speed_t *speed,
+int32_t omni_solve(const chassis_geometry_t *geometry, const chassis_speed_t *speed,
                    float wheel_rad_s[CHASSIS_WHEEL_COUNT])
 {
     if (geometry == NULL || speed == NULL || wheel_rad_s == NULL ||
@@ -24,7 +24,7 @@ int32_t omni_solve(const omni_geometry_t *geometry, const chassis_speed_t *speed
     return ERR_OK;
 }
 
-int32_t omni_inverse(const omni_geometry_t *geometry, const float wheel_rad_s[CHASSIS_WHEEL_COUNT],
+int32_t omni_inverse(const chassis_geometry_t *geometry, const float wheel_rad_s[CHASSIS_WHEEL_COUNT],
                      chassis_speed_t *speed)
 {
     if (geometry == NULL || wheel_rad_s == NULL || speed == NULL ||

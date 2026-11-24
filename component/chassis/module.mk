@@ -1,3 +1,4 @@
+obj-$(CONFIG_COMPONENT_CHASSIS) += chassis.o
 subdir-$(CONFIG_COMPONENT_CHASSIS_MECANUM) += mecanum
 subdir-$(CONFIG_COMPONENT_CHASSIS_OMNI) += omni
 subdir-$(CONFIG_COMPONENT_CHASSIS_SWERVE) += swerve

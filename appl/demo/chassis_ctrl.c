@@ -1,7 +1,8 @@
-/* 底盘：CAN1 四个 m3508，全向轮，速度环。速度读 operate，前后左右是云台坐标系。
+/* 底盘：CAN1 四个 m3508，速度环。构型、几何、减速比和功率模型在 chassis_config.h。
+ * 速度读 operate，前后左右是云台坐标系。
  * 上位机给出非零速度时改跟上位机速度；否则仍用手动速度。
  * yaw 电机多圈角度把它们旋到车体坐标。失能时输出关掉。
- * 功率只限制这四个轮。超电在 CAN2。 */
+ * 功率只限制这四个驱动轮。超电在 CAN2。 */
 #include <math.h>
 #include "osal/period.h"
 #include "component/common/initcall.h"
@@ -11,23 +12,11 @@
 #include "cdd/supercap/supercap.h"
 #include "cdd/referee/referee.h"
 #include "cdd/host/host.h"
-#include "component/power/power.h"
-#include "component/chassis/omni/omni.h"
-#include "chassis_config.h"
+#include "component/chassis/chassis.h"
 #include "supercap_config.h"
-#include "power_config.h"
 #include "host_config.h"
 
-static dji_motor_t *const chassis_wheel[CHASSIS_WHEEL_COUNT] =
-{
-    &chassis_m3508_0,
-    &chassis_m3508_1,
-    &chassis_m3508_2,
-    &chassis_m3508_3,
-};
-
-/* 参与功率限制的电机，只放驱动电机。舵轮的转向电机、轮腿的关节电机不放进来。数量和轮子数无关。 */
-static motor_t *const power_motor[] =
+static motor_t *const chassis_wheel[CHASSIS_WHEEL_COUNT] =
 {
     &chassis_m3508_0.base,
     &chassis_m3508_1.base,
@@ -35,8 +24,6 @@ static motor_t *const power_motor[] =
     &chassis_m3508_3.base,
 };
 
-static const omni_geometry_t chassis_geometry = CHASSIS_GEOMETRY_INIT;
-static const power_model_t power_model = POWER_MODEL_INIT;
 static referee_info_t referee;   /* 每个控制周期只取一次，功率限制和超电同步共用 */
 static bool wheels_on;
 
@@ -44,7 +31,7 @@ static void wheels_set_active(bool active)
 {
     for (uint32_t wheel_index = 0; wheel_index < CHASSIS_WHEEL_COUNT; wheel_index++)
     {
-        motor_set_active(&chassis_wheel[wheel_index]->base, active);
+        motor_set_active(chassis_wheel[wheel_index], active);
     }
     wheels_on = active;
 }
@@ -69,38 +56,23 @@ static void chassis_command(const operate_snap_t *op, float *forward_m_s, float 
 
 static float chassis_power_limit_w(void)
 {
-    power_budget_t budget = {0};
+    chassis_power_source_t source = {0};
     supercap_status_t supercap;
 
     if (referee.online && referee.performance.chassis_power_limit != 0u)
     {
-        budget.referee_valid = true;
-        budget.referee_limit_w = (float)referee.performance.chassis_power_limit;
+        source.referee_valid = true;
+        source.referee_limit_w = (float)referee.performance.chassis_power_limit;
     }
 
     supercap_get(&supercap);
     if (supercap.online && supercap.error != SUPERCAP_ERROR_FATAL)
     {
-        budget.supercap_valid = true;
-        budget.energy_raw = supercap.energy_raw;
-        budget.supercap_limit_w = (float)supercap.chassis_power_limit_w;
-        budget.extra_w = POWER_EXTRA_W;
-        budget.margin_w = POWER_MARGIN_W;
-        budget.energy_high_raw = POWER_ENERGY_HIGH_RAW;
+        source.supercap_valid = true;
+        source.energy_raw = supercap.energy_raw;
+        source.supercap_limit_w = (float)supercap.chassis_power_limit_w;
     }
-    return power_budget_w(&budget);
-}
-
-static void chassis_power_apply(void)
-{
-    power_channel_t channels[ARRAY_SIZE(power_motor)];
-
-    for (uint32_t index = 0; index < ARRAY_SIZE(power_motor); index++)
-    {
-        channels[index].output = &power_motor[index]->output;
-        channels[index].speed_rad_s = power_motor[index]->speed_rad_s;
-    }
-    (void)power_apply(channels, ARRAY_SIZE(power_motor), &power_model, chassis_power_limit_w());
+    return chassis_power_budget_w(&source);
 }
 
 /* 裁判系统功率上限和缓冲能量只在变化时同步给超电。 */
@@ -144,7 +116,6 @@ INIT_APP_STAGE2(chassis_ctrl_init);
 static void chassis_ctrl_run(void *argument)
 {
     chassis_speed_t speed;
-    float wheel_rad_s[CHASSIS_WHEEL_COUNT];
     float forward_m_s;
     float right_m_s;
     float spin_rad_s;
@@ -164,13 +135,7 @@ static void chassis_ctrl_run(void *argument)
         {
             wheels_set_active(true);
         }
-        if (omni_solve(&chassis_geometry, &speed, wheel_rad_s) == ERR_OK)
-        {
-            for (uint32_t wheel_index = 0; wheel_index < CHASSIS_WHEEL_COUNT; wheel_index++)
-            {
-                (void)motor_set_target(&chassis_wheel[wheel_index]->base, wheel_rad_s[wheel_index] * CHASSIS_DRIVE_RATIO);
-            }
-        }
+        (void)chassis_solve(chassis_wheel, &speed);
     }
     else if (wheels_on)
     {
@@ -179,7 +144,7 @@ static void chassis_ctrl_run(void *argument)
     (void)motor_compute_bus(CAN_BUS1);
     if (enabled)
     {
-        chassis_power_apply();
+        (void)chassis_power_apply(chassis_wheel, CHASSIS_WHEEL_COUNT, chassis_power_limit_w());
     }
     (void)motor_send_bus(CAN_BUS1);
 

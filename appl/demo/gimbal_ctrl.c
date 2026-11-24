@@ -1,5 +1,5 @@
 /* 云台：CAN2，pitch = gm6020，yaw = j4310。角度和转速都用电机自己的反馈。
- * 四个轮速做全向轮逆解算，自旋取负号作为 yaw 速度前馈。
+ * 四个轮速按底盘构型逆解算，自旋取负号作为 yaw 速度前馈。
  * 自瞄打开、视觉锁定且给出的 pitch/yaw 不全为 0 时跟自瞄，否则用手。
  * 手控是 operate 给出的目标转速，每个任务周期加到电机目标角上。
  * 失能时两台一起关掉。打开后各发控制帧，谁收到反馈谁先对齐再积分，互不等待。
@@ -14,15 +14,20 @@
 #include "cdd/motor/motor_init.h"
 #include "cdd/host/host.h"
 #include "cdd/referee/referee.h"
-#include "component/chassis/omni/omni.h"
+#include "component/chassis/chassis.h"
 #include "host_config.h"
-#include "chassis_config.h"
 
 #define GIMBAL_PITCH_MAX_RAD       0.45f    /* pitch 目标角上限，相对电机零点 */
 #define GIMBAL_PITCH_MIN_RAD      -0.45f    /* pitch 目标角下限，和上限不必对称 */
 #define GIMBAL_CTRL_PERIOD_S      (1.0f / (float)OS_FREQ_1000HZ) /* 与 gimbal_ctrl_task 同周期 */
 
-static const omni_geometry_t chassis_geometry = CHASSIS_GEOMETRY_INIT;
+static motor_t *const chassis_wheel[CHASSIS_WHEEL_COUNT] =
+{
+    &chassis_m3508_0.base,
+    &chassis_m3508_1.base,
+    &chassis_m3508_2.base,
+    &chassis_m3508_3.base,
+};
 static ins_attitude_t gimbal_attitude;
 static bool gimbal_on;      /* 操作手使能后两台输出都开着。关的是一起关，动起来各看各的反馈 */
 static bool pitch_aligned;  /* pitch 目标已对齐电机角度。没对齐之前不积分 */
@@ -86,27 +91,6 @@ static void host_cache_store(void)
     host_store(HOST_CMD_NAV_STATE, &nav, sizeof nav);
 }
 
-static bool wheel_rates(float wheel_rad_s[CHASSIS_WHEEL_COUNT])
-{
-    dji_motor_t *const wheel[CHASSIS_WHEEL_COUNT] =
-    {
-        &chassis_m3508_0,
-        &chassis_m3508_1,
-        &chassis_m3508_2,
-        &chassis_m3508_3,
-    };
-
-    for (uint32_t wheel_index = 0; wheel_index < CHASSIS_WHEEL_COUNT; wheel_index++)
-    {
-        if (!motor_online(&wheel[wheel_index]->base))
-        {
-            return false;
-        }
-        wheel_rad_s[wheel_index] = wheel[wheel_index]->base.speed_rad_s / CHASSIS_DRIVE_RATIO;
-    }
-    return true;
-}
-
 static void gimbal_set_active(bool active)
 {
     motor_set_active(&pitch_gm6020.base, active);
@@ -149,11 +133,10 @@ static bool axis_follow(motor_t *motor, bool *aligned, float *target,
 
 static void yaw_spin_ff(void)
 {
-    float wheel_rad_s[CHASSIS_WHEEL_COUNT];
     chassis_speed_t speed;
 
     yaw_rate_ff = 0.0f;
-    if (wheel_rates(wheel_rad_s) && omni_inverse(&chassis_geometry, wheel_rad_s, &speed) == ERR_OK)
+    if (chassis_inverse(chassis_wheel, &speed) == ERR_OK)
     {
         yaw_rate_ff = -speed.spin_rad_s;
     }
