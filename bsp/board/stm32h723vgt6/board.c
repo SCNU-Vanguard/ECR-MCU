@@ -19,6 +19,7 @@ BSP_UART_BUFFERS(remote,         36,   0,    0);           /* 只收 */
 BSP_UART_BUFFERS(imgtrans,      512,   0,    0);           /* 只收 */
 BSP_UART_BUFFERS(vofa,            0, 128,  512);           /* 只发 */
 BSP_UART_BUFFERS(log,            16, 128, 2048);           /* 主要是发；RX 只给 shell 用 */
+BSP_UART_BUFFERS(dm_imu,         256, 128,  512);           /* IMU，USART3 */
 
 const bsp_uart_cfg_t board_uart_cfg[UART_NUM] =
 {
@@ -30,6 +31,8 @@ const bsp_uart_cfg_t board_uart_cfg[UART_NUM] =
     [UART_REMOTE]     = BSP_UART_CFG(remote,        &huart5,  1, 0),
     [UART_REFEREE]    = BSP_UART_CFG(referee,       &huart7,  1, 1),   /* UART7 PE7/PE8，115200 */
     [UART_LOG]        = BSP_UART_CFG(log,           &huart10, 1, 1),
+    [UART_LOG]        = BSP_UART_CFG(log,           &huart10, 1, 1),
+    [UART_DM_IMU]     = BSP_UART_CFG(dm_imu,        &huart3,  1, 1),
 };
 #endif
 

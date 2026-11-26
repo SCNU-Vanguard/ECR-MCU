@@ -11,6 +11,7 @@ typedef enum
     UART_IMGTRANS,      /* 图传，USART1 只收    */
     UART_VOFA,          /* VOFA，USART1 只发    */
     UART_LOG,           /* 日志打印             */
+    UART_DM_IMU,         /*DM_imu通信*/
     UART_NUM
 } uart_id_e;
 
