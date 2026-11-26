@@ -11,17 +11,12 @@
 #include "bsp/tick/bsp_tick.h"
 
 
-/** @brief IMU_USB或485主动模式数据帧定义 
- * 帧头：0x55 0xAA 
- * 数据段：ID + 01/02/03/04(分别对应加速度角速度欧拉角四元数)+具体数据(12或16字节)
- * 帧尾：CRC16(2bytes) 0x0A
- * 总共：4+12+3=19字节或4+16+3=23字节，四个同时输出是80字节。
-*/
+/*选择对应的模式，imu在使用前用usb连接上位机设置对应模式*/
 #define y 1
 #define n 0
-#define DM_IMU_Mode_RS485_AUTO_TRANSMIT  y//使用主动模式()//ps主动模式无法使用485重启
+#define DM_IMU_Mode_RS485_AUTO_TRANSMIT  n//使用主动模式()//ps主动模式无法使用485主动重启故不建议使用
 #define DM_IMU_Mode_RS485_CORRESPONDING  n//使用应答模式()
-#define DM_IMU_Mode_CAN_AUTO_TRANSMIT    n
+#define DM_IMU_Mode_CAN_AUTO_TRANSMIT    y
 #define DM_IMU_Mode_CAN_CORRESPONDING    n
 
 #if (DM_IMU_Mode_RS485_CORRESPONDING == y || DM_IMU_Mode_RS485_AUTO_TRANSMIT == y) && (DM_IMU_Mode_CAN_AUTO_TRANSMIT == n && DM_IMU_Mode_CAN_CORRESPONDING == n)
@@ -29,16 +24,16 @@
     #define DM_IMU_RX_BLOCK_MAX        256u        /* 和 board.c 里 UART_DM_IMU 的接收缓冲一致 */
     #define DM_IMU_STREAM_SIZE         512u        /* 重组缓冲区大小 */
 
-    #define DM_IMU_RID_ACCEL      0x00
-    #define DM_IMU_RID_ANGULAR    0x01
-    #define DM_IMU_RID_EULER      0x02
-    #define DM_IMU_RID_QUATERNION 0x03
-    #define DM_IMU_CRC8_INITIAL   0xFFu
-    #define DM_IMU_CRC8_XOROUT    0xFFu
-    #define DM_IMU_SOF            0xA5
-    #define DM_IMU_EOF            0x5A
+    #define DM_IMU_RID_ACCEL           0x00
+    #define DM_IMU_RID_ANGULAR         0x01
+    #define DM_IMU_RID_EULER           0x02
+    #define DM_IMU_RID_QUATERNION      0x03
+    #define DM_IMU_CRC8_INITIAL        0xFFu
+    #define DM_IMU_CRC8_XOROUT         0xFFu
+    #define DM_IMU_SOF                 0xA5
+    #define DM_IMU_EOF                 0x5A
     #define DM_IMU_DM_IMU_FRAME_TOTAL_LENGTH   24u
-    #define DM_IMU_OFFLINE_TIME_MS   500u
+    #define DM_IMU_OFFLINE_TIME_MS     500u
 
     #if DM_IMU_Mode_RS485_AUTO_TRANSMIT == y
         #define DM_SLAVE_ID                   0x0B        /* IMU的ID */
@@ -62,7 +57,6 @@
     static uint8_t  stream[DM_IMU_STREAM_SIZE] SRAM_NONCACHEABLE; //重组缓冲区
     static uint32_t bad_DM_IMU_Frame_count;//接收错误帧计数
     static dm_imu_frame_t DM_IMU_Frame;//定义完成的数据帧，
-    static uint8_t dm_imu_next_correspondiog_state = IMU_STATE_ACCEL; //下一次发送时应答模式下的状态机，0-加速度，1-角速度，2-欧拉角，3-四元数
     static volatile uint32_t dm_imu_last_rx_time = 0;
 
     static void DM_imu_task_run(void *argument, const uint8_t *data, uint16_t len);
@@ -70,7 +64,6 @@
     static void DM_imu_dispatch(dm_imu_frame_t *DM_IMU_Frame);
     static void drop_bytes(uint32_t count);
     static uint8_t DM_IMU_crc8_calculate(const uint8_t *data, uint32_t length);
-    static void dm_imu_get_frame(void *argument);
     static void dm_imu_watchdog(void *argument);
 
     EVENT_TASK_DEFINE(dm_imu_task, OS_PRIORITY_MEDIUM, OS_STACK_MEDIUM, EVENT_QUEUE, DM_IMU_RX_BLOCK_MAX, OS_QUEUE_LEN_4,
@@ -80,8 +73,65 @@
                     OS_STACK_SMALL,dm_imu_watchdog,NULL);
 
     #if DM_IMU_Mode_RS485_CORRESPONDING == y
+    static uint8_t dm_imu_next_correspondiog_state = IMU_STATE_ACCEL; //下一次发送时应答模式下的状态机，0-加速度，1-角速度，2-欧拉角，3-四元数
+    static void dm_imu_get_frame(void *argument);
     PERIOD_TASK_DEFINE(dm_imu_periodic_task,OS_FREQ_200HZ,OS_PRIORITY_LOW,
                     OS_STACK_LARGE,dm_imu_get_frame,NULL);//定时发送应答帧
+    
+    /** @brief IMU事件任务函数
+     * @param argument: 任务参数
+     * @param data: 接收到的数据
+     * @param len: 数据长度(超时为NULL NULL 0)
+     */
+    /**
+     * @brief 获取应答模式下的IMU数据帧
+     * @param argument: 任务参数
+     * @param data: 接收到的数据
+     * @param len: 数据长度(超时为NULL NULL 0)
+     */
+    static void dm_imu_get_frame(void *argument)
+    {
+        switch(dm_imu_next_correspondiog_state)
+        {
+        case IMU_STATE_ACCEL:
+            {
+
+                uint8_t cmd[24] = {0xA5 ,0x0D ,0x01 ,0x00,0x00 ,0x00,0x00, 0x00, 0x00,0x00 ,0x00, 0x00, 0x00, 0x00, 0x00, 0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x5A};
+                cmd[22] = 127;
+                bsp_uart_write(UART_DM_IMU, cmd, 24);
+                dm_imu_next_correspondiog_state = IMU_STATE_ANGULAR;
+                break;
+            }
+            case IMU_STATE_ANGULAR:
+            {
+
+                uint8_t cmd[24] = {0xA5 ,0x0D ,0x01 ,0x01,0x00 ,0x00,0x00, 0x00, 0x00,0x00 ,0x00, 0x00, 0x00, 0x00, 0x00, 0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x5A};
+                cmd[22] = 54;
+                bsp_uart_write(UART_DM_IMU, cmd, 24);
+                dm_imu_next_correspondiog_state = IMU_STATE_EULER;
+                break;
+            }
+            case IMU_STATE_EULER:
+            {
+
+                uint8_t cmd[24] = {0xA5 ,0x0D ,0x01 ,0x02,0x00 ,0x00,0x00, 0x00, 0x00,0x00 ,0x00, 0x00, 0x00, 0x00, 0x00, 0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x5A};
+                cmd[22] = 237;
+                bsp_uart_write(UART_DM_IMU, cmd, 24);
+                dm_imu_next_correspondiog_state = IMU_STATE_QUATERNION;
+                break;
+            }
+            case IMU_STATE_QUATERNION:
+            {
+
+                uint8_t cmd[24] = {0xA5 ,0x0D ,0x01 ,0x03,0x00 ,0x00,0x00, 0x00, 0x00,0x00 ,0x00, 0x00, 0x00, 0x00, 0x00, 0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x5A};
+                cmd[22] = 164;
+                bsp_uart_write(UART_DM_IMU, cmd, 24);
+                dm_imu_next_correspondiog_state = IMU_STATE_ACCEL;
+                break;
+            }
+        }
+    }
+
     #endif
 
     //注：在主动模式下不能使用485重启,只有在应答模式下才能使用485重启，
@@ -158,60 +208,6 @@
             }
         }
     return false;
-    }
-
-    /** @brief IMU事件任务函数
-     * @param argument: 任务参数
-     * @param data: 接收到的数据
-     * @param len: 数据长度(超时为NULL NULL 0)
-     */
-    /**
-     * @brief 获取应答模式下的IMU数据帧
-     * @param argument: 任务参数
-     * @param data: 接收到的数据
-     * @param len: 数据长度(超时为NULL NULL 0)
-     */
-    static void dm_imu_get_frame(void *argument)
-    {
-        switch(dm_imu_next_correspondiog_state)
-        {
-        case IMU_STATE_ACCEL:
-            {
-
-                uint8_t cmd[24] = {0xA5 ,0x0D ,0x01 ,0x00,0x00 ,0x00,0x00, 0x00, 0x00,0x00 ,0x00, 0x00, 0x00, 0x00, 0x00, 0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x5A};
-                cmd[22] = 127;
-                bsp_uart_write(UART_DM_IMU, cmd, 24);
-                dm_imu_next_correspondiog_state = IMU_STATE_ANGULAR;
-                break;
-            }
-            case IMU_STATE_ANGULAR:
-            {
-
-                uint8_t cmd[24] = {0xA5 ,0x0D ,0x01 ,0x01,0x00 ,0x00,0x00, 0x00, 0x00,0x00 ,0x00, 0x00, 0x00, 0x00, 0x00, 0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x5A};
-                cmd[22] = 54;
-                bsp_uart_write(UART_DM_IMU, cmd, 24);
-                dm_imu_next_correspondiog_state = IMU_STATE_EULER;
-                break;
-            }
-            case IMU_STATE_EULER:
-            {
-
-                uint8_t cmd[24] = {0xA5 ,0x0D ,0x01 ,0x02,0x00 ,0x00,0x00, 0x00, 0x00,0x00 ,0x00, 0x00, 0x00, 0x00, 0x00, 0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x5A};
-                cmd[22] = 237;
-                bsp_uart_write(UART_DM_IMU, cmd, 24);
-                dm_imu_next_correspondiog_state = IMU_STATE_QUATERNION;
-                break;
-            }
-            case IMU_STATE_QUATERNION:
-            {
-
-                uint8_t cmd[24] = {0xA5 ,0x0D ,0x01 ,0x03,0x00 ,0x00,0x00, 0x00, 0x00,0x00 ,0x00, 0x00, 0x00, 0x00, 0x00, 0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x00 ,0x5A};
-                cmd[22] = 164;
-                bsp_uart_write(UART_DM_IMU, cmd, 24);
-                dm_imu_next_correspondiog_state = IMU_STATE_ACCEL;
-                break;
-            }
-        }
     }
 
 
@@ -433,7 +429,6 @@
 
     static void dm_imu_get_frame(void* argument)
     {
-        (void*)argument;
 
             if(dm_imu_next_correspondiog_state == IMU_STATE_ACCEL)
             {
@@ -466,7 +461,6 @@
     static void dm_imu_watchdog(void *argument)//掉线后重启imu
     {
         
-        (void*)argument;
         uint32_t now  = bsp_tick_ms();
         if(now - dm_imu_last_rx_time >= DM_IMU_OFFLINE_TIME_MS)
         {
@@ -514,7 +508,6 @@
         event_data = *(can_event_t *)data;
         uint8_t id =((can_event_t *)data)->id;
         uint8_t *rx_data = ((can_event_t *)data)->data;
-        uint8_t can_len = ((can_event_t *)data)->len;
         uint8_t bus = (((can_event_t *)data)->bus);
         if(bus == DM_IMU_CAN_BUS && id == DM_IMU_CAN_MST_ID)
         {

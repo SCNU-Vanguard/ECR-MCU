@@ -1,6 +1,7 @@
 #ifndef __DM_IMU_H__
 #define __DM_IMU_H__
 #include "component/common/types.h"
+/*提供从dm_imu读出的数据，提供一个dm_imu_frame_t的结构体以供调用*/
 typedef struct
 {
     uint8_t  id;
