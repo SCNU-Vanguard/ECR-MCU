@@ -19,6 +19,8 @@
 #define HOST_RX_TIMEOUT     OS_TIMEOUT_200MS
 #define HOST_HEADER_LENGTH  3u      /* 帧头 + 长度 + 命令 */
 #define HOST_CRC_LENGTH     2u
+#define HOST_CRC16_POLY     0x1021u     /* 正向多项式，低位先入 */
+#define HOST_CRC16_INIT     0xFFFFu
 #define HOST_MAX_FRAME      (HOST_HEADER_LENGTH + HOST_PAYLOAD_MAX + HOST_CRC_LENGTH)
 #define HOST_STREAM_SIZE    (HOST_MAX_FRAME - 1u + HOST_RX_BLOCK_MAX)
 
@@ -110,7 +112,10 @@ static int32_t write_frame(uint8_t command, const void *payload, uint8_t length)
     {
         memcpy(frame + HOST_HEADER_LENGTH, payload, length);
     }
-    crc16_append(frame, frame_length);
+    uint16_t crc = crc16_calculate(frame, frame_length - HOST_CRC_LENGTH, HOST_CRC16_POLY, HOST_CRC16_INIT);
+
+    frame[frame_length - 2u] = (uint8_t)(crc & 0xFFu);
+    frame[frame_length - 1u] = (uint8_t)(crc >> 8);
 
     /* 整帧原子入队：空间不够就一个字节都不写，避免队列里留下半帧 */
     if (bsp_usb_tx_free() < frame_length)
@@ -276,7 +281,7 @@ static void parse_stream(void)
         {
             return;
         }
-        if (!crc16_verify(stream, frame_length))
+        if (!crc16_verify(stream, frame_length, HOST_CRC16_POLY, HOST_CRC16_INIT))
         {
             note_bad_frame();
             drop_bytes(1u);

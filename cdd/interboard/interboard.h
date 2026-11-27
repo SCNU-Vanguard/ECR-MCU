@@ -9,7 +9,7 @@
  * 本板是云台还是底盘，在当前兵种的 interboard_config.h 里写 INTERBOARD_ROLE。
  *
  * 帧（小端）：0xA5 | 载荷长度 | 序号 | 载荷 | CRC16 低字节 | CRC16 高字节
- * CRC16 与裁判系统相同。 */
+ * CRC16：正向多项式 0x1021，初值 0xFFFF，低位先入，低字节在前。 */
 #define INTERBOARD_ROLE_MASTER  0
 #define INTERBOARD_ROLE_SLAVE   1
 #include "interboard_config.h"

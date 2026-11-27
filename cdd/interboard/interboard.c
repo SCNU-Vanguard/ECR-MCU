@@ -17,6 +17,8 @@ _Static_assert(sizeof(interboard_reply_t) <= INTERBOARD_PAYLOAD_MAX, "interboard
 #define INTERBOARD_RX_BLOCK_MAX   128u    /* 与 board.c 里 interboard 接收缓冲一致 */
 #define INTERBOARD_HEADER_LENGTH  3u
 #define INTERBOARD_CRC_LENGTH     2u
+#define INTERBOARD_CRC16_POLY     0x1021u     /* 正向多项式，低位先入 */
+#define INTERBOARD_CRC16_INIT     0xFFFFu
 #define INTERBOARD_MAX_FRAME      (INTERBOARD_HEADER_LENGTH + INTERBOARD_PAYLOAD_MAX + INTERBOARD_CRC_LENGTH)
 #define INTERBOARD_STREAM_SIZE    (INTERBOARD_MAX_FRAME - 1u + INTERBOARD_RX_BLOCK_MAX)
 #define INTERBOARD_REPLY_TIMEOUT  OS_TIMEOUT_10MS
@@ -171,7 +173,10 @@ static bool send_frame(uint8_t sequence, const void *payload, uint8_t length)
     {
         memcpy(frame + INTERBOARD_HEADER_LENGTH, payload, length);
     }
-    crc16_append(frame, frame_length);
+    uint16_t crc = crc16_calculate(frame, frame_length - INTERBOARD_CRC_LENGTH, INTERBOARD_CRC16_POLY, INTERBOARD_CRC16_INIT);
+
+    frame[frame_length - 2u] = (uint8_t)(crc & 0xFFu);
+    frame[frame_length - 1u] = (uint8_t)(crc >> 8);
     return bsp_uart_write(UART_INTERBOARD, frame, frame_length) == (int32_t)frame_length;
 }
 
@@ -362,7 +367,7 @@ static void parse_stream(void)
         {
             return;
         }
-        if (!crc16_verify(stream, frame_length))
+        if (!crc16_verify(stream, frame_length, INTERBOARD_CRC16_POLY, INTERBOARD_CRC16_INIT))
         {
             note_bad_frame();
             drop_bytes(1u);

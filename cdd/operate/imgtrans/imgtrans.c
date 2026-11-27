@@ -7,6 +7,8 @@
 #include "component/crc/crc.h"
 
 #define IMGTRANS_FRAME_LEN      21u
+#define IMGTRANS_CRC16_POLY     0x1021u     /* 正向多项式，低位先入 */
+#define IMGTRANS_CRC16_INIT     0xFFFFu
 #define IMGTRANS_HEADER_0       0xA9u
 #define IMGTRANS_HEADER_1       0x53u
 #define IMGTRANS_CHANNEL_MID    1024
@@ -26,9 +28,10 @@ static int16_t axis(int value)
     return (centered > IMGTRANS_CHANNEL_LIMIT || centered < -IMGTRANS_CHANNEL_LIMIT) ? 0 : (int16_t)centered;
 }
 
-bool imgtrans_parse(const uint8_t *frame, imgtrans_data_t *out) 
+bool imgtrans_parse(const uint8_t *frame, imgtrans_data_t *out)
 {
-    if (frame[0] != IMGTRANS_HEADER_0 || frame[1] != IMGTRANS_HEADER_1 || !crc16_verify(frame, IMGTRANS_FRAME_LEN))
+    if (frame[0] != IMGTRANS_HEADER_0 || frame[1] != IMGTRANS_HEADER_1
+        || !crc16_verify(frame, IMGTRANS_FRAME_LEN, IMGTRANS_CRC16_POLY, IMGTRANS_CRC16_INIT))
     {
         return false;
     }

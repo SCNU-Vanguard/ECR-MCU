@@ -9,7 +9,8 @@
  *   帧头 5 字节：0xA5 | 数据段长度（2 字节）| 包序号 | CRC8（前 4 字节）
  *   命令码 2 字节
  *   数据段 data_length 字节
- *   CRC16 2 字节（前面所有字节，包括帧头） */
+ *   CRC16 2 字节（前面所有字节，包括帧头，低字节在前）
+ * CRC8、CRC16 都是低位先入。CRC8 正向多项式 0x31、初值 0xFF；CRC16 正向多项式 0x1021、初值 0xFFFF。 */
 #include "component/common/types.h"
 
 #define REFEREE_FRAME_SOF               0xA5u
@@ -17,6 +18,10 @@
 #define REFEREE_HEADER_CRC8_COVERED     4u      /* 帧头里被 CRC8 校验的前几个字节 */
 #define REFEREE_COMMAND_ID_LENGTH       2u
 #define REFEREE_TAIL_LENGTH             2u      /* 帧尾 CRC16 */
+#define REFEREE_CRC8_POLY               0x31u   /* 正向多项式，低位先入 */
+#define REFEREE_CRC8_INIT               0xFFu
+#define REFEREE_CRC16_POLY              0x1021u /* 正向多项式，低位先入 */
+#define REFEREE_CRC16_INIT              0xFFFFu
 #define REFEREE_FRAME_OVERHEAD          (REFEREE_HEADER_LENGTH + REFEREE_COMMAND_ID_LENGTH + REFEREE_TAIL_LENGTH)
 #define REFEREE_DATA_OFFSET             (REFEREE_HEADER_LENGTH + REFEREE_COMMAND_ID_LENGTH)
 

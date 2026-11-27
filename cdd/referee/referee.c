@@ -132,7 +132,7 @@ static void parse_stream(void)
         {
             return;                                 /* 帧头还没收全 */
         }
-        if (!crc8_verify(stream, REFEREE_HEADER_LENGTH))
+        if (!crc8_verify(stream, REFEREE_HEADER_LENGTH, REFEREE_CRC8_POLY, REFEREE_CRC8_INIT))
         {
             current_info.bad_frames++;
             drop_bytes(1u);
@@ -154,7 +154,7 @@ static void parse_stream(void)
         {
             return;                                 /* 等下一块数据 */
         }
-        if (!crc16_verify(stream, frame_length))
+        if (!crc16_verify(stream, frame_length, REFEREE_CRC16_POLY, REFEREE_CRC16_INIT))
         {
             current_info.bad_frames++;
             drop_bytes(1u);
@@ -248,14 +248,17 @@ int32_t referee_send_frame(uint16_t command_id, const void *data, uint16_t lengt
     frame[1] = (uint8_t)(length & 0xFFu);
     frame[2] = (uint8_t)(length >> 8);
     frame[3] = sequence;
-    crc8_append(frame, REFEREE_HEADER_LENGTH);
+    frame[REFEREE_HEADER_LENGTH - 1u] = crc8_calculate(frame, REFEREE_HEADER_CRC8_COVERED, REFEREE_CRC8_POLY, REFEREE_CRC8_INIT);
     frame[5] = (uint8_t)(command_id & 0xFFu);
     frame[6] = (uint8_t)(command_id >> 8);
     if (length != 0u)
     {
         memcpy(frame + REFEREE_DATA_OFFSET, data, length);
     }
-    crc16_append(frame, frame_length);
+    uint16_t crc = crc16_calculate(frame, frame_length - REFEREE_TAIL_LENGTH, REFEREE_CRC16_POLY, REFEREE_CRC16_INIT);
+
+    frame[frame_length - 2u] = (uint8_t)(crc & 0xFFu);
+    frame[frame_length - 1u] = (uint8_t)(crc >> 8);
 
     /* 临界区 2：空间可能被别的任务占了，入队前再查一次；放不下整帧就整帧丢弃，不留半帧 */
     irq_key = os_irq_save();
