@@ -19,6 +19,12 @@ _Static_assert(HI05R3_NODE_ID != HI05R3_HOST_ADDRESS, "HI05R3 node address must 
 #if HI05R3_RATE_HZ < 1u || HI05R3_RATE_HZ > 1000u
 #error "HI05R3_RATE_HZ must be 1..1000"
 #endif
+#ifndef HI05R3_ATTITUDE
+#error "ins_config.h must define HI05R3_ATTITUDE"
+#endif
+#if HI05R3_ATTITUDE != HI05R3_ATTITUDE_AHRS && HI05R3_ATTITUDE != HI05R3_ATTITUDE_DEVICE
+#error "HI05R3_ATTITUDE must be HI05R3_ATTITUDE_AHRS or HI05R3_ATTITUDE_DEVICE"
+#endif
 
 /* 比例与 HiPNUC J1939 手册一致：加速度 1/2048 G（G 取 9.8），角速度 2000/32768 deg/s，角度 0.001 deg，四元数 0.0001。 */
 #define ACC_LSB_M_S2            (9.8f / 2048.0f)
@@ -70,7 +76,7 @@ typedef struct
     bool temperature_valid;
     bool gyro_clipped;
     bool accel_clipped;
-#if HI05R3_USE_DEVICE_ATTITUDE
+#if HI05R3_ATTITUDE == HI05R3_ATTITUDE_DEVICE
     uint32_t published_acc_count;
     uint32_t published_gyro_count;
     uint32_t published_quat_count;
@@ -94,7 +100,7 @@ static void publish(uint32_t now_us)
     bool quaternion_fresh = state.quat_valid && (uint32_t)(now_us - state.quat_us) <= GROUP_WINDOW_US;
     bool attitude_fresh;
 
-#if HI05R3_USE_DEVICE_ATTITUDE
+#if HI05R3_ATTITUDE == HI05R3_ATTITUDE_DEVICE
     bool accel_fresh = state.acc_valid && (uint32_t)(now_us - state.acc_us) <= GROUP_WINDOW_US;
     bool gyro_fresh = (uint32_t)(now_us - state.gyro_us) <= GROUP_WINDOW_US;
 
@@ -122,7 +128,7 @@ static void publish(uint32_t now_us)
     quat_norm2 = state.quat[0] * state.quat[0] + state.quat[1] * state.quat[1] +
                  state.quat[2] * state.quat[2] + state.quat[3] * state.quat[3];
     attitude_fresh = frame.accel_fresh && quaternion_fresh && quat_norm2 > 0.25f && quat_norm2 < 4.0f;
-#if HI05R3_USE_DEVICE_ATTITUDE
+#if HI05R3_ATTITUDE == HI05R3_ATTITUDE_DEVICE
     if (!attitude_fresh)
     {
         return;
@@ -203,7 +209,7 @@ static void on_can_frame(can_id_e bus, const can_frame_t *frame, void *context)
         state.acc_us = now_us;
         state.acc_valid = true;
         state.stats.acc_count++;
-#if HI05R3_USE_DEVICE_ATTITUDE
+#if HI05R3_ATTITUDE == HI05R3_ATTITUDE_DEVICE
         publish(now_us);
 #endif
         break;
@@ -290,7 +296,7 @@ static void on_can_frame(can_id_e bus, const can_frame_t *frame, void *context)
         state.quat_us = now_us;
         state.quat_valid = true;
         state.stats.quat_count++;
-#if HI05R3_USE_DEVICE_ATTITUDE
+#if HI05R3_ATTITUDE == HI05R3_ATTITUDE_DEVICE
         publish(now_us);
 #endif
         break;

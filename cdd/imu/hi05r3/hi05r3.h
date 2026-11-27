@@ -3,7 +3,9 @@
 #include "component/common/types.h"
 
 /* HI05R3（HiPNUC）驱动：经典 CAN，1 Mbit/s，J1939 扩展帧。
- * 总线、节点地址、输出频率、姿态来源在当前兵种的 ins_config.h。设备姿态模式需要模块周期发送加速度、角速度和四元数。
+ * 总线、节点、输出频率和 HI05R3_ATTITUDE 在当前兵种的 ins_config.h，且只在 INS 选中 HI05R3 时定义。
+ * 本驱动由 CONFIG_CDD_IMU_HI05R3 决定编不编。
+ * HI05R3_ATTITUDE_DEVICE 需要模块周期发送加速度、角速度和四元数。
  * 一条报文只有一个量。设备姿态模式在加速度、角速度和四元数各收到一帧后交给回调（CAN 接收中断里调用）。 */
 
 typedef struct

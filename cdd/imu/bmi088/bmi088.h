@@ -26,7 +26,8 @@ typedef struct
     uint32_t temperature_sequence;      /* 成功读取温度寄存器的计数；0 表示尚无有效温度 */
 } bmi088_frame_t;
 
-/* 标定参数（取值见当前兵种的 ins_config.h）：accel = 灵敏度 * raw * scale - scale * offset；gyro = 灵敏度 * raw - offset */
+/* 标定参数（INS 选中 BMI088 时取 ins_config.h 的 BMI088_CALIBRATION_TABLE）：
+ * accel = 灵敏度 * raw * scale - scale * offset；gyro = 灵敏度 * raw - offset */
 typedef struct
 {
     float accel_scale[3];

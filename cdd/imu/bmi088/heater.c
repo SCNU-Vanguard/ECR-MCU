@@ -36,12 +36,12 @@ int32_t heater_init(void)
 {
     const pid_config_t pid_config =
     {
-        .kp = HEATER_KP,
-        .ki = HEATER_KI,
-        .kd = HEATER_KD,
-        .output_limit = HEATER_MAX_DUTY,
-        .integral_limit = HEATER_INTEGRAL_LIMIT,
-        .dead_band = HEATER_DEAD_BAND_C,
+        .kp = BMI088_HEATER_KP,
+        .ki = BMI088_HEATER_KI,
+        .kd = BMI088_HEATER_KD,
+        .output_limit = BMI088_HEATER_MAX_DUTY,
+        .integral_limit = BMI088_HEATER_INTEGRAL_LIMIT,
+        .dead_band = BMI088_HEATER_DEAD_BAND_C,
     };
 
     pid_init(&heater_pid, &pid_config);
@@ -63,7 +63,7 @@ void heater_step(float temperature_c)
         return;
     }
     last_temperature_c = temperature_c;
-    if (temperature_c >= HEATER_SHUTDOWN_C)
+    if (temperature_c >= BMI088_HEATER_SHUTDOWN_C)
     {
         cutoff_active = true;
         /* 高温启动或运行中过温后锁定退出预热，降温时不得重新施加预热功率。 */
@@ -79,22 +79,22 @@ void heater_step(float temperature_c)
         startup_temperature_pending = false;
 
         // 预加热到40度，之后切换成普通加热，这个时候一般会飙到50多度，之后热量冗余，会使得pid温控跳变没有这么大
-        preheating = temperature_c < HEATER_TARGET_C - HEATER_PREHEAT_MARGIN_C;
+        preheating = temperature_c < BMI088_HEATER_TARGET_C - BMI088_HEATER_PREHEAT_MARGIN_C;
     }
     if (preheating)
     {
-        if (temperature_c >= HEATER_TARGET_C - HEATER_PREHEAT_MARGIN_C)
+        if (temperature_c >= BMI088_HEATER_TARGET_C - BMI088_HEATER_PREHEAT_MARGIN_C)
         {
             preheating = false;
-            heater_pid.integral = HEATER_INTEGRAL_PRESET;
+            heater_pid.integral = BMI088_HEATER_INTEGRAL_PRESET;
         }
         else
         {
-            apply_duty(HEATER_PREHEAT_DUTY);
+            apply_duty(BMI088_HEATER_PREHEAT_DUTY);
             return;
         }
     }
-    (void)pid_position_compute(&heater_pid, temperature_c, HEATER_TARGET_C);
+    (void)pid_position_compute(&heater_pid, temperature_c, BMI088_HEATER_TARGET_C);
     if (heater_pid.output < 0.0f)                       /* 只能加热：输出和积分都不允许为负 */
     {
         heater_pid.output = 0.0f;
@@ -116,7 +116,7 @@ void heater_off(void)
 
 float heater_target_c(void)
 {
-    return HEATER_TARGET_C;
+    return BMI088_HEATER_TARGET_C;
 }
 
 float heater_last_temperature_c(void)

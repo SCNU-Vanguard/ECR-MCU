@@ -1,7 +1,9 @@
-/* 惯导任务。数据源由 ins_config.h 的 INS_IMU 选择。
+/* 惯导任务。数据源由 ins_config.h 的 INS_IMU 选择，一次一个。
+ * 没选中的 IMU 参数不参与编译。驱动本身由 robot.config 的 CONFIG_CDD_IMU_* 决定编不编。
  * BMI088：DRDY 中断 -> SPI DMA -> 帧回调里 event_post_isr -> 本任务换算、标定、ahrs_update。
  *   超时 100 ms 没有新帧就 bmi088_recover。打开 CONFIG_CDD_IMU_BMI088_HEATER 时，温度进窗口之前不开始解算。
- * HI05R3：经 HI05R3_BUS 指定的 CAN 总线收 J1939。USE_DEVICE_ATTITUDE 为 0 时由角速度帧驱动 ahrs_update，为 1 时等三类帧齐备后使用模块四元数。
+ * HI05R3：经 HI05R3_BUS 指定的 CAN 总线收 J1939。
+ *   HI05R3_ATTITUDE_AHRS 由角速度帧驱动 ahrs_update；HI05R3_ATTITUDE_DEVICE 等三类帧齐备后使用模块四元数。
  * shell：ins_info 看姿态和统计，ins_imu 看最近一帧物理量。 */
 #include <math.h>
 #include <string.h>
@@ -16,27 +18,27 @@
 #include "ins_config.h"
 #include "bsp/tick/bsp_tick.h"
 
-#if INS_IMU == INS_IMU_BMI088
-#include "cdd/imu/bmi088/bmi088.h"
-#endif
-
 #ifndef INS_IMU
 #error "ins_config.h must define INS_IMU"
 #endif
-#if INS_IMU != INS_IMU_BMI088 && INS_IMU != INS_IMU_HI05R3
-#error "INS_IMU must be INS_IMU_BMI088 or INS_IMU_HI05R3"
+#if INS_IMU == INS_IMU_BMI088
+#include "cdd/imu/bmi088/bmi088.h"
+#ifndef CONFIG_CDD_IMU_BMI088
+#error "INS_IMU is BMI088 but CONFIG_CDD_IMU_BMI088 is off"
 #endif
-#ifndef HI05R3_USE_DEVICE_ATTITUDE
-#error "ins_config.h must define HI05R3_USE_DEVICE_ATTITUDE"
-#endif
-#if HI05R3_USE_DEVICE_ATTITUDE != 0 && HI05R3_USE_DEVICE_ATTITUDE != 1
-#error "HI05R3_USE_DEVICE_ATTITUDE must be 0 or 1"
-#endif
-#if INS_IMU == INS_IMU_HI05R3
+#elif INS_IMU == INS_IMU_HI05R3
 #include "cdd/imu/hi05r3/hi05r3.h"
 #ifndef CONFIG_CDD_IMU_HI05R3
 #error "INS_IMU is HI05R3 but CONFIG_CDD_IMU_HI05R3 is off"
 #endif
+#ifndef HI05R3_ATTITUDE
+#error "ins_config.h must define HI05R3_ATTITUDE"
+#endif
+#if HI05R3_ATTITUDE != HI05R3_ATTITUDE_AHRS && HI05R3_ATTITUDE != HI05R3_ATTITUDE_DEVICE
+#error "HI05R3_ATTITUDE must be HI05R3_ATTITUDE_AHRS or HI05R3_ATTITUDE_DEVICE"
+#endif
+#else
+#error "INS_IMU must be INS_IMU_BMI088 or INS_IMU_HI05R3"
 #endif
 
 #define INS_PI                      3.14159265f
@@ -49,9 +51,9 @@
 #error "INS_ASSUME_STATIONARY must be 0 or 1"
 #endif
 
-#ifdef CONFIG_CDD_IMU_BMI088_HEATER
-#define INS_TEMP_ENABLE_MIN_C       (HEATER_TARGET_C - 2.0f)
-#define INS_TEMP_ENABLE_MAX_C       (HEATER_TARGET_C + 2.0f)
+#if INS_IMU == INS_IMU_BMI088 && defined(CONFIG_CDD_IMU_BMI088_HEATER)
+#define INS_TEMP_ENABLE_MIN_C       (BMI088_HEATER_TARGET_C - 2.0f)
+#define INS_TEMP_ENABLE_MAX_C       (BMI088_HEATER_TARGET_C + 2.0f)
 #define INS_TEMP_SETTLE_US          2500000u
 #define INS_TEMP_MAX_AGE_US         500000u
 #endif
@@ -74,7 +76,7 @@ typedef struct
     float    last_dt_s;
 } ins_stats_t;
 
-#if INS_IMU == INS_IMU_BMI088 || (INS_IMU == INS_IMU_HI05R3 && HI05R3_USE_DEVICE_ATTITUDE == 0)
+#if INS_IMU == INS_IMU_BMI088 || (INS_IMU == INS_IMU_HI05R3 && HI05R3_ATTITUDE == HI05R3_ATTITUDE_AHRS)
 static ahrs_t ahrs;
 #endif
 static ins_stats_t ins_stats;
@@ -93,7 +95,7 @@ static uint32_t ins_temperature_ready_since_us;
 static uint32_t ins_temperature_last_sequence;
 static uint32_t ins_temperature_last_update_us;
 #endif
-#if INS_IMU == INS_IMU_HI05R3 && HI05R3_USE_DEVICE_ATTITUDE
+#if INS_IMU == INS_IMU_HI05R3 && HI05R3_ATTITUDE == HI05R3_ATTITUDE_DEVICE
 static bool device_yaw_ready;
 static float device_last_yaw;
 #endif
@@ -108,7 +110,7 @@ static void clear_attitude(void)
     published_attitude.yaw_rad = 0.0f;
     published_attitude.yaw_total_rad = 0.0f;
     published_attitude.update_count = 0u;
-    published_attitude.ins_cost_time = 0u;
+    published_attitude.elapsed_us = 0u;
 }
 
 static void invalidate_attitude(void)
@@ -187,7 +189,7 @@ static void calibration_feed(const bmi088_sample_t *sample)
 }
 #endif
 
-#if INS_IMU == INS_IMU_BMI088 || (INS_IMU == INS_IMU_HI05R3 && HI05R3_USE_DEVICE_ATTITUDE == 0)
+#if INS_IMU == INS_IMU_BMI088 || (INS_IMU == INS_IMU_HI05R3 && HI05R3_ATTITUDE == HI05R3_ATTITUDE_AHRS)
 /* 发布一帧传感器快照，和需要时更新姿态。和具体数据源无关：传感器量由调用方给。 */
 static void publish_snapshot(const float gyro_rad_s[3], const float accel_m_s2[3],
                              float temperature_c, bool temperature_valid,
@@ -216,7 +218,7 @@ static void publish_snapshot(const float gyro_rad_s[3], const float accel_m_s2[3
         /* 姿态输出已写完再取终点；无符号周期差支持一次 CYCCNT 回绕，区间须短于一个计数周期。
          * 与 Embedded_Frame 的 last_us 一致：取数前到成功输出，区间内抢占/中断仍计入。 */
         const uint32_t frame_end_cycles = bsp_cycle_count();
-        published_attitude.ins_cost_time = (uint32_t)((uint64_t)(frame_end_cycles - frame_begin_cycles) * 1000000u / bsp_cycle_freq_hz());
+        published_attitude.elapsed_us = (uint32_t)((uint64_t)(frame_end_cycles - frame_begin_cycles) * 1000000u / bsp_cycle_freq_hz());
     }
     DMB();
     publish_version++;
@@ -239,7 +241,7 @@ void ins_get_attitude(ins_attitude_t *attitude)
 }
 
 #if INS_IMU == INS_IMU_HI05R3
-#if HI05R3_USE_DEVICE_ATTITUDE
+#if HI05R3_ATTITUDE == HI05R3_ATTITUDE_DEVICE
 /* 归一化四元数 [w, x, y, z]。模长不合理（0.5..2）返回 false。 */
 static bool quat_normalize(const float input[4], float output[4])
 {
@@ -343,7 +345,7 @@ static void publish_device_attitude(const hi05r3_frame_t *frame)
         }
         device_last_yaw = yaw_rad;
         published_attitude.update_count++;
-        published_attitude.ins_cost_time = frame->communication_time_us;
+        published_attitude.elapsed_us = frame->communication_time_us;
     }
     DMB();
     publish_version++;
@@ -359,7 +361,7 @@ static void ins_run(void *argument, const uint8_t *data, uint16_t length)
     {
         ins_stats.timeout_count++;
         have_previous_frame = false;
-#if HI05R3_USE_DEVICE_ATTITUDE
+#if HI05R3_ATTITUDE == HI05R3_ATTITUDE_DEVICE
         device_yaw_ready = false;
 #else
         ahrs_break_continuity(&ahrs);                       /* 链路断过，不能把缺口当连续数据 */
@@ -371,7 +373,7 @@ static void ins_run(void *argument, const uint8_t *data, uint16_t length)
     {
         return;
     }
-#if HI05R3_USE_DEVICE_ATTITUDE == 0
+#if HI05R3_ATTITUDE == HI05R3_ATTITUDE_AHRS
     const uint32_t frame_begin_cycles = bsp_cycle_count();
 #endif
     memcpy(&frame, data, sizeof frame);
@@ -385,7 +387,7 @@ static void ins_run(void *argument, const uint8_t *data, uint16_t length)
         if ((uint32_t)(frame.sequence - previous_gyro_sequence) != 1u)
         {
             ins_stats.gap_count++;
-#if HI05R3_USE_DEVICE_ATTITUDE == 0
+#if HI05R3_ATTITUDE == HI05R3_ATTITUDE_AHRS
             ahrs_break_continuity(&ahrs);
 #endif
         }
@@ -394,7 +396,7 @@ static void ins_run(void *argument, const uint8_t *data, uint16_t length)
     previous_gyro_timestamp_us = frame.timestamp_us;
     previous_gyro_sequence = frame.sequence;
     ins_stats.last_dt_s = dt_s;
-#if HI05R3_USE_DEVICE_ATTITUDE
+#if HI05R3_ATTITUDE == HI05R3_ATTITUDE_DEVICE
     publish_device_attitude(&frame);
 #else
     ahrs_sample_t ahrs_sample;
@@ -435,7 +437,7 @@ static void ins_on_frame(const hi05r3_frame_t *frame, void *context)
 
 static int32_t ins_init(void)
 {
-#if HI05R3_USE_DEVICE_ATTITUDE == 0
+#if HI05R3_ATTITUDE == HI05R3_ATTITUDE_AHRS
     int32_t ret = ahrs_start(&ahrs, INS_ALGORITHM, 1.0f / (float)HI05R3_RATE_HZ);
 
     if (ret != ERR_OK)
@@ -661,7 +663,7 @@ static int shell_ins_info(int argc, char *argv[])
     (void)argc;
     (void)argv;
     ins_get_attitude(&attitude);
-#if INS_IMU == INS_IMU_HI05R3 && HI05R3_USE_DEVICE_ATTITUDE
+#if INS_IMU == INS_IMU_HI05R3 && HI05R3_ATTITUDE == HI05R3_ATTITUDE_DEVICE
     shell_out("ins: algorithm=hi05r3 valid=%d updates=%lu\r\n", (int)attitude.valid, (unsigned long)attitude.update_count);
 #else
     shell_out("ins: algorithm=%s valid=%d updates=%lu\r\n", ahrs_algorithm_name(ahrs.algorithm), (int)attitude.valid,
@@ -680,10 +682,10 @@ static int shell_ins_info(int argc, char *argv[])
         shell_out("  temperature = unavailable\r\n");
     }
     print_milli("dt", ins_stats.last_dt_s * 1000.0f, "ms");
-#if INS_IMU == INS_IMU_HI05R3 && HI05R3_USE_DEVICE_ATTITUDE
-    shell_out("  ins_cost_time=%lu us (CAN frame receive span)\r\n", (unsigned long)attitude.ins_cost_time);
+#if INS_IMU == INS_IMU_HI05R3 && HI05R3_ATTITUDE == HI05R3_ATTITUDE_DEVICE
+    shell_out("  elapsed=%lu us (CAN frame receive span)\r\n", (unsigned long)attitude.elapsed_us);
 #else
-    shell_out("  ins_cost_time=%lu us (task snapshot -> output)\r\n", (unsigned long)attitude.ins_cost_time);
+    shell_out("  elapsed=%lu us (task snapshot -> output)\r\n", (unsigned long)attitude.elapsed_us);
 #endif
     shell_out("  imu_frames=%lu frames=%lu gaps=%lu\r\n", (unsigned long)attitude.imu_frame_count,
               (unsigned long)ins_stats.frame_count, (unsigned long)ins_stats.gap_count);
